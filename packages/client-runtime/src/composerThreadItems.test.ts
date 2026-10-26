@@ -48,3 +48,45 @@ it("ranks thread mentions like the palette and leaves out subagent threads", () 
   });
   expect(items.map((item) => item.thread.threadId)).toEqual(["word", "newer-mid-word"]);
 });
+
+it("offers threads from other connected environments only when given their labels", () => {
+  const otherEnvironmentId = EnvironmentId.make("env-other");
+  const input = {
+    shells: [
+      shell("local", "Model picker"),
+      shell("remote", "Model docs", { environmentId: otherEnvironmentId }),
+      shell("unlabeled", "Model review", {
+        environmentId: EnvironmentId.make("env-disconnected"),
+      }),
+    ],
+    environmentId,
+    excludeThreadId: null,
+    query: "model",
+    now: Date.parse("2026-10-23T00:00:00.000Z"),
+  };
+  expect(matchComposerThreadItems(input).map((item) => item.thread.threadId)).toEqual(["local"]);
+  const items = matchComposerThreadItems({
+    ...input,
+    otherEnvironmentLabels: new Map([[otherEnvironmentId, "MacBook Pro"]]),
+  });
+  expect(items.map((item) => [item.thread.threadId, item.description])).toEqual([
+    ["local", "Thread"],
+    ["remote", "Thread · MacBook Pro"],
+  ]);
+});
+
+it("excludes the active thread only in its own environment", () => {
+  const otherEnvironmentId = EnvironmentId.make("env-other");
+  const items = matchComposerThreadItems({
+    shells: [
+      shell("same-id", "Model picker"),
+      shell("same-id", "Model picker", { environmentId: otherEnvironmentId }),
+    ],
+    environmentId,
+    excludeThreadId: ThreadId.make("same-id"),
+    query: "model",
+    now: Date.parse("2026-10-23T00:00:00.000Z"),
+    otherEnvironmentLabels: new Map([[otherEnvironmentId, "MacBook Pro"]]),
+  });
+  expect(items.map((item) => item.thread.environmentId)).toEqual([otherEnvironmentId]);
+});

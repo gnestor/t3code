@@ -23,6 +23,7 @@ import {
 } from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useThreadShells } from "~/state/entities";
+import { useConnectedEnvironmentIds, useEnvironmentIdentities } from "~/state/environments";
 import {
   pullRequestEnvironment,
   usePullRequestList,
@@ -92,8 +93,24 @@ export function useComposerMenuItems({
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
   const environmentThreadShells = useThreadShells(isPathTrigger);
+  // Other connected environments' threads attach as transcripts, like a sidebar drop.
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
+  const environmentIdentities = useEnvironmentIdentities();
+  const otherEnvironmentLabels = new Map(
+    environmentIdentities
+      .filter(
+        (identity) =>
+          identity.environmentId !== environmentId &&
+          connectedEnvironmentIds.includes(identity.environmentId),
+      )
+      .map((identity) => [identity.environmentId, identity.label] as const),
+  );
   // Mounts older settled threads matching the mention, which shells may leave out.
-  useThreadSearch(isPathTrigger ? [environmentId] : [], pathTriggerQuery, { titlesOnly: true });
+  useThreadSearch(
+    isPathTrigger ? [environmentId, ...otherEnvironmentLabels.keys()] : [],
+    pathTriggerQuery,
+    { titlesOnly: true },
+  );
   const workspaceEntries = useComposerPathSearch({
     environmentId,
     cwd: isPathTrigger ? gitCwd : null,
@@ -168,6 +185,7 @@ export function useComposerMenuItems({
           excludeThreadId: activeThreadId,
           query: composerTrigger.query,
           now,
+          otherEnvironmentLabels,
         }),
         ...workspaceEntries.entries.map((entry) => ({
           id: `path:${entry.kind}:${entry.path}`,

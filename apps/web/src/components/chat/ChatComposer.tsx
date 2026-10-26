@@ -50,7 +50,6 @@ import {
   memo,
   type ReactNode,
   useEffect,
-  useEffectEvent,
   useId,
   useImperativeHandle,
   useLayoutEffect,
@@ -1909,6 +1908,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
 
   const { onUsageLimitsCommand } = props;
+  // A remote `@` pick attaches through the drop import, declared below after attachment intake.
+  const importThreadTranscriptRef = useRef<
+    (ref: ScopedThreadRef, isActive: () => boolean) => Promise<void>
+  >(async () => {});
   const onSelectComposerItem = (item: ComposerCommandItem) => {
     if (composerSelectLockRef.current) return;
     composerSelectLockRef.current = true;
@@ -2025,6 +2028,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     if (item.type === "thread") {
       if (trigger.kind !== "path") return;
+      if (item.thread.environmentId !== environmentId) {
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          const targetKey = attachmentTargetKey;
+          void importThreadTranscriptRef.current(
+            item.thread,
+            () => attachmentTargetKeyRef.current === targetKey,
+          );
+        }
+        return;
+      }
       const shell = readThreadShell(item.thread);
       if (!shell) return;
       const record = threadContextRecord(item.thread, shell.title);
@@ -2856,8 +2873,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
   });
 
-  const attachDroppedThreadFile = useEffectEvent((file: File) => addComposerAttachments([file]));
-  const importDroppedThread = useEffectEvent(
+  // This environment's agent can't read another environment's thread, so it arrives as a transcript.
+  const importThreadTranscript = useStableCallback(
     async (ref: ScopedThreadRef, isActive: () => boolean) => {
       const targetKey = attachmentTargetKey;
       pendingDraftWork.begin(targetKey);
@@ -2883,7 +2900,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             return threadContextAttachment(ref.environmentId, result.value);
           },
           isActive,
-          attach: attachDroppedThreadFile,
+          attach: (file) => addComposerAttachments([file]),
           onLimitReached: () => {
             if (activeThreadId) {
               setThreadError(
@@ -2898,7 +2915,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const error = squashAtomCommandFailure(importResult);
         toastManager.add({
           type: "error",
-          title: "Unable to read the dropped thread",
+          title: "Unable to attach the thread",
           description:
             isEnvironmentRequestInvalidError(error) &&
             error.reason === "thread_transcript_too_large"
@@ -2911,10 +2928,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
   );
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- the `@` handler is declared before attachment intake, so it reaches this import through a ref
+  useLayoutEffect(() => {
+    importThreadTranscriptRef.current = importThreadTranscript;
+  });
+
   useThreadContextDrop(composerFormRef, environmentId, attachmentTargetKey, (refs, isActive) => {
     const records = refs.flatMap((ref) => {
       if (ref.environmentId !== environmentId) {
-        void importDroppedThread(
+        void importThreadTranscript(
           ref,
           () => isActive() && attachmentTargetKeyRef.current === attachmentTargetKey,
         );
