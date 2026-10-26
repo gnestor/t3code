@@ -43,6 +43,10 @@ describe("resolveTriageCommand", () => {
     await expect(resolveTriageCommand(desktopWith(async () => notOnPath(null)))).resolves.toBe(
       "npx t3 triage",
     );
+    const staleWindowsPathEntry = { ...notOnPath(null), supported: true, onPath: true };
+    await expect(
+      resolveTriageCommand(desktopWith(async () => staleWindowsPathEntry)),
+    ).resolves.toBe("npx t3 triage");
     await expect(
       resolveTriageCommand(desktopWith(() => Promise.reject(new Error("ipc closed")))),
     ).resolves.toBe("npx t3 triage");

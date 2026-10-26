@@ -18,8 +18,10 @@ function launcherCommand(launcherPath: string) {
 export async function resolveTriageCommand(bridge: DesktopBridge | undefined) {
   try {
     const state = await bridge?.cliCommand?.getState();
-    if (state?.onPath) return "t3 triage";
-    if (state?.launcherPath) return `${launcherCommand(state.launcherPath)} triage`;
+    // Windows reports onPath from its PATH entry alone; only an existing launcher proves it runs.
+    if (state?.launcherPath) {
+      return state.onPath ? "t3 triage" : `${launcherCommand(state.launcherPath)} triage`;
+    }
   } catch (error) {
     console.warn("Could not read the desktop CLI state.", error);
   }
