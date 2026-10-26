@@ -440,40 +440,105 @@
       }
 
       #boot-error {
-        display: grid;
-        justify-items: center;
-        gap: 16px;
-        max-width: 600px;
-        padding: 24px;
-        text-align: center;
+        --boot-error-fg: #262626;
+        --boot-error-bg: #ffffff;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        width: min(400px, calc(100% - 48px));
+        font-size: 13px;
+        line-height: 20px;
+      }
+
+      html.dark #boot-error {
+        --boot-error-fg: #f5f5f5;
+        --boot-error-bg: #0a0a0a;
+      }
+
+      html[data-theme-selected="true"] #boot-error {
+        --boot-error-fg: var(--boot-foreground);
+        --boot-error-bg: var(--boot-background);
+      }
+
+      #boot-error h1 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 22px;
       }
 
       #boot-error p {
-        margin: 0;
+        margin: 4px 0 0;
+        opacity: 0.6;
+        overflow-wrap: anywhere;
+        text-wrap: pretty;
+      }
+
+      #boot-error code {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px;
         overflow-wrap: anywhere;
       }
 
       #boot-error button {
-        padding: 8px 16px;
-        border: 1px solid currentColor;
-        border-radius: 4px;
-        background: transparent;
-        color: inherit;
+        border: 0;
         font: inherit;
         cursor: pointer;
+      }
+
+      #boot-error button:focus-visible {
+        outline: 2px solid var(--boot-error-fg);
+        outline-offset: 2px;
       }
 
       #boot-error-command {
         display: flex;
         align-items: center;
-        gap: 12px;
-        max-width: 100%;
+        gap: 8px;
+        box-sizing: border-box;
+        width: 100%;
+        margin-top: 16px;
+        padding: 6px 6px 6px 12px;
+        border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+        border-radius: 8px;
+        background: color-mix(in srgb, currentColor 4%, transparent);
       }
 
-      #boot-error code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        overflow-wrap: anywhere;
+      #boot-error-command code {
+        flex: 1;
+        min-width: 0;
         user-select: all;
+      }
+
+      #boot-error-copy {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        opacity: 0.6;
+      }
+
+      #boot-error-copy:hover {
+        opacity: 1;
+        background: color-mix(in srgb, currentColor 8%, transparent);
+      }
+
+      #boot-error-reload {
+        height: 32px;
+        margin-top: 24px;
+        padding: 0 14px;
+        border-radius: 6px;
+        background: var(--boot-error-fg);
+        color: var(--boot-error-bg);
+        font-weight: 500;
+      }
+
+      #boot-error-reload:hover {
+        opacity: 0.9;
       }
     </style>
     <title>T3 Code (Beta)</title>

@@ -26,6 +26,13 @@ export async function resolveTriageCommand(bridge: DesktopBridge | undefined) {
   return FALLBACK_TRIAGE_COMMAND;
 }
 
+const icon = (paths: string) =>
+  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const COPY_ICON = icon(
+  '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+);
+const CHECK_ICON = icon('<path d="M20 6 9 17l-5-5"/>');
+
 export function showBootError(error: unknown) {
   console.error("T3 Code failed to start.", error);
   const bootShell = document.getElementById("boot-shell");
@@ -35,24 +42,20 @@ export function showBootError(error: unknown) {
   content.id = "boot-error";
   content.setAttribute("role", "alert");
 
-  const message = document.createElement("p");
-  message.textContent = "T3 Code could not load.";
-  content.append(message);
+  const title = document.createElement("h1");
+  title.textContent = "T3 Code could not load";
+  content.append(title);
 
   if (import.meta.env.DEV && error instanceof Error) {
     const detail = document.createElement("p");
-    detail.textContent = error.message;
+    detail.append(Object.assign(document.createElement("code"), { textContent: error.message }));
     content.append(detail);
   }
 
-  const reload = document.createElement("button");
-  reload.type = "button";
-  reload.textContent = "Reload";
-  reload.addEventListener("click", () => window.location.reload());
-  content.append(reload);
-
   const hint = document.createElement("p");
-  hint.textContent = "If Reload does not fix the problem, run this command in a terminal:";
+  hint.textContent =
+    "Try reloading. If the problem continues, run this in a terminal to find the cause.";
+
   const command = document.createElement("code");
   command.textContent = FALLBACK_TRIAGE_COMMAND;
   const commandRow = document.createElement("div");
@@ -61,17 +64,30 @@ export function showBootError(error: unknown) {
   // The clipboard API exists only in secure contexts, such as HTTPS and the desktop app.
   if (window.isSecureContext) {
     const copy = document.createElement("button");
+    copy.id = "boot-error-copy";
     copy.type = "button";
-    copy.textContent = "Copy";
+    copy.title = "Copy command";
+    copy.setAttribute("aria-label", "Copy command");
+    copy.innerHTML = COPY_ICON;
     copy.addEventListener("click", () => {
       navigator.clipboard.writeText(command.textContent ?? "").then(
-        () => (copy.textContent = "Copied"),
+        () => {
+          copy.innerHTML = CHECK_ICON;
+          copy.setAttribute("aria-label", "Copied");
+        },
         (copyError) => console.warn("Could not copy the triage command.", copyError),
       );
     });
     commandRow.append(copy);
   }
-  content.append(hint, commandRow);
+
+  const reload = document.createElement("button");
+  reload.id = "boot-error-reload";
+  reload.type = "button";
+  reload.textContent = "Reload";
+  reload.addEventListener("click", () => window.location.reload());
+
+  content.append(hint, commandRow, reload);
   bootShell.replaceChildren(content);
 
   void resolveTriageCommand(window.desktopBridge).then((value) => (command.textContent = value));
