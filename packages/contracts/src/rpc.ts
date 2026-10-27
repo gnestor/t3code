@@ -152,6 +152,16 @@ import {
   ReviewDiffPreviewResult,
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
+import {
+  ThreadRelayEnvironmentUnreachableError,
+  ThreadRelayError,
+  ThreadRelayHost,
+  ThreadRelayInvokeInput,
+  ThreadRelayInvokeResult,
+  ThreadRelayResponse,
+  ThreadRelayStreamEvent,
+  ThreadRelayUpdateHostInput,
+} from "./threadRelay.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
   ProviderUploadFeedbackError,
@@ -571,6 +581,11 @@ export const WS_METHODS = {
   projectCloneCancel: "projectClone.cancel",
   projectCloneRetry: "projectClone.retry",
   subscribeProjectClones: "subscribeProjectClones",
+
+  threadRelayConnect: "threadRelay.connect",
+  threadRelayUpdateHost: "threadRelay.updateHost",
+  threadRelayRespond: "threadRelay.respond",
+  threadRelayInvoke: "threadRelay.invoke",
 
   subscribeVcsStatus: "subscribeVcsStatus",
   subscribeWorktreeSetup: "subscribeWorktreeSetup",
@@ -1024,6 +1039,33 @@ const WsPullRequestsChecksRpc = Rpc.make(WS_METHODS.pullRequestsChecks, {
   payload: PullRequestRef,
   success: Schema.NullOr(PullRequestChecks),
   error: PullRequestRpcError,
+});
+
+const WsThreadRelayConnectRpc = Rpc.make(WS_METHODS.threadRelayConnect, {
+  payload: ThreadRelayHost,
+  success: ThreadRelayStreamEvent,
+  error: Schema.Union([ThreadRelayError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+const WsThreadRelayUpdateHostRpc = Rpc.make(WS_METHODS.threadRelayUpdateHost, {
+  payload: ThreadRelayUpdateHostInput,
+  error: Schema.Union([ThreadRelayError, EnvironmentAuthorizationError]),
+});
+
+const WsThreadRelayRespondRpc = Rpc.make(WS_METHODS.threadRelayRespond, {
+  payload: ThreadRelayResponse,
+  error: Schema.Union([ThreadRelayError, EnvironmentAuthorizationError]),
+});
+
+const WsThreadRelayInvokeRpc = Rpc.make(WS_METHODS.threadRelayInvoke, {
+  payload: ThreadRelayInvokeInput,
+  success: ThreadRelayInvokeResult,
+  error: Schema.Union([
+    ThreadRelayEnvironmentUnreachableError,
+    ThreadRelayError,
+    EnvironmentAuthorizationError,
+  ]),
 });
 
 const WsPullRequestsActivityRpc = Rpc.make(WS_METHODS.pullRequestsActivity, {
@@ -1978,6 +2020,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,
+  WsThreadRelayConnectRpc,
+  WsThreadRelayUpdateHostRpc,
+  WsThreadRelayRespondRpc,
+  WsThreadRelayInvokeRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,
   WsCloudGetRelayClientStatusRpc,

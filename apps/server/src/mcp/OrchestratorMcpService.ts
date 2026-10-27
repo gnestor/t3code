@@ -106,16 +106,25 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
-  clientRuntimeModeCeiling,
   type McpInvocationScope,
   type McpThreadInvocationScope,
   requireThreadScope,
+  threadlessCallerLimits,
 } from "./McpInvocationContext.ts";
 import * as Metrics from "../observability/Metrics.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
+
+/** A relayed message has no local sender thread, so its origin travels in the text both the user and the agent read. */
+const relayedMessageText = (
+  remote: NonNullable<McpInvocationScope["remote"]>,
+  message: string,
+): string => {
+  const title = remote.title.replace(/\s+/g, " ").trim().slice(0, 120);
+  return `[Relayed from thread ${JSON.stringify(title)} (${remote.threadId}) on environment ${remote.environmentId}]\n\n${message}`;
+};
 const TASK_WAKE_EVENTS = [
   { thread: "parent", eventType: "subagent.updated" },
   { thread: "child", eventType: "run.updated" },
@@ -1153,10 +1162,7 @@ const make = Effect.gen(function* () {
     if (scope.thread === undefined) {
       return {
         parent: undefined,
-        limits: {
-          runtimeMode: clientRuntimeModeCeiling(scope.client),
-          interactionMode: "default",
-        } satisfies { runtimeMode: RuntimeMode; interactionMode: ProviderInteractionMode },
+        limits: threadlessCallerLimits(scope),
       } as const;
     }
     const parent = yield* loadProjection(scope.thread.threadId);
@@ -1182,6 +1188,7 @@ const make = Effect.gen(function* () {
   const resolveProjectTarget = (
     parent: Pick<OrchestrationV2ThreadProjection, "thread"> | undefined,
     projectId: ProjectId | undefined,
+    remote?: McpInvocationScope["remote"],
   ) =>
     projectId !== undefined
       ? Effect.succeed(projectId)
@@ -1190,7 +1197,9 @@ const make = Effect.gen(function* () {
         : Effect.fail(
             failure(
               "target_required",
-              "Pass projectId: this MCP client is not running inside a T3 thread.",
+              remote === undefined
+                ? "Pass projectId: this MCP client is not running inside a T3 thread."
+                : "Pass projectId: the caller's project does not exist on this environment. Take one from t3_thread_search results for this environment (each match has a projectId).",
             ),
           );
 
@@ -2679,7 +2688,7 @@ const make = Effect.gen(function* () {
     ),
     listThreads: Effect.fn("OrchestratorMcpService.listThreads")(function* (scope, input) {
       const { parent } = yield* loadCaller(scope);
-      const projectId = yield* resolveProjectTarget(parent, input.projectId);
+      const projectId = yield* resolveProjectTarget(parent, input.projectId, scope.remote);
       const projectThreads = yield* threadManagement
         .listProjectThreads({
           projectId,
@@ -2836,7 +2845,10 @@ const make = Effect.gen(function* () {
           threadId: input.threadId,
           ...(parent === undefined ? {} : { senderThreadId: parent.thread.id }),
           messageId,
-          text: input.message,
+          text:
+            scope.remote === undefined
+              ? input.message
+              : relayedMessageText(scope.remote, input.message),
           attachments: [],
           mode,
           createdBy: "agent",

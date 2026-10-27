@@ -51,6 +51,7 @@ import * as ThreadHandlers from "./toolkits/thread/handlers.ts";
 import * as ThreadMetadataMcpService from "./ThreadMetadataMcpService.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import * as ThreadRelayBroker from "./ThreadRelayBroker.ts";
 import * as OrchestratorHandlers from "./toolkits/orchestrator/handlers.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
 import * as PreviewHandlers from "./toolkits/preview/handlers.ts";
@@ -767,6 +768,16 @@ const INPUT_TARGET_TOOLS: ReadonlySet<string> = new Set([
 
 const resultThreadKeys = ["childThreadId", "targetThreadId", "boundThreadId", "threadId"] as const;
 
+/** Thread tools take an optional `environmentId`; any other value than this server's relays the call. */
+const targetsOtherEnvironment = (
+  args: unknown,
+  localEnvironmentId: string | undefined,
+): boolean => {
+  const environmentId = (args as { readonly environmentId?: unknown } | null | undefined)
+    ?.environmentId;
+  return typeof environmentId === "string" && environmentId !== localEnvironmentId;
+};
+
 /** Thread ids a handoff tool result names: the thread that received the work. */
 const resultThreadIds = (content: unknown): ReadonlyArray<string> => {
   if (typeof content !== "object" || content === null) return [];
@@ -857,9 +868,11 @@ const withToolAnalytics =
           // event per successful call floods analytics. Only failures count there.
           if (!handoff && outcome.outcome === "ok") return;
           // Client credentials (no calling thread) report an unknown caller.
-          const invocation = Option.getOrUndefined(
+          const scope = Option.getOrUndefined(
             yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext),
-          )?.thread;
+          );
+          const invocation = scope?.thread;
+          const relayed = handoff && targetsOtherEnvironment(args, scope?.environmentId);
           const providers = Option.isSome(registry) ? yield* registry.value.getProviders : [];
           // Only handoff tools pay for thread lookups; the rest report the
           // caller's provider from the credential.
@@ -867,11 +880,13 @@ const withToolAnalytics =
             handoff && invocation !== undefined
               ? ((yield* shellOf(invocation.threadId)) ?? undefined)
               : undefined;
-          const targetIds = handoff
-            ? [...new Set(handoffTargetIds(tool, args, result))].filter(
-                (threadId) => threadId !== invocation?.threadId,
-              )
-            : [];
+          // A relayed target lives on another environment; its id must not resolve to a local thread.
+          const targetIds =
+            handoff && !relayed
+              ? [...new Set(handoffTargetIds(tool, args, result))].filter(
+                  (threadId) => threadId !== invocation?.threadId,
+                )
+              : [];
           const targets = yield* Effect.forEach(targetIds, shellOf);
           for (const properties of agentToolProperties({
             tool,
@@ -892,7 +907,12 @@ const withToolAnalytics =
             targets: targets.filter((thread) => thread !== null),
             outcome,
             ...(handoff
-              ? { settings: handoffSettings(tool, args, result?.structuredContent) }
+              ? {
+                  settings: {
+                    ...handoffSettings(tool, args, result?.structuredContent),
+                    ...(relayed ? { remoteEnvironment: true } : {}),
+                  },
+                }
               : {}),
             durationMs,
           })) {
@@ -984,9 +1004,15 @@ export const layerPreviewToolkit = Layer.mergeAll(
 export const layerOrchestratorToolkit = toolkitRegistration(
   OrchestratorToolkit,
   OrchestratorHandlers.layer,
-).pipe(Layer.provide(OrchestratorMcpService.layer), Layer.provide(ThreadMetadataMcpService.layer));
+).pipe(
+  Layer.provide(OrchestratorMcpService.layer),
+  Layer.provide(ThreadMetadataMcpService.layer),
+  Layer.provide(ThreadRelayBroker.layer),
+);
 
-export const layerThreadToolkit = toolkitRegistration(ThreadToolkit, ThreadHandlers.layer);
+export const layerThreadToolkit = toolkitRegistration(ThreadToolkit, ThreadHandlers.layer).pipe(
+  Layer.provide(ThreadRelayBroker.layer),
+);
 
 const layerWorktreeToolkitRegistration = toolkitRegistration(
   WorktreeToolkit,

@@ -19,9 +19,9 @@ export interface ComposerThreadItem {
 
 /**
  * Threads to reference from the composer, matched and ranked like the command
- * palette, without subagent threads. The agent can only read threads on its
- * own server, so a thread from another environment is only offered when the
- * caller can attach it as a transcript, as dropping it from the sidebar does.
+ * palette, without subagent threads. A thread from another environment is only
+ * offered when the caller labels that environment (it is connected); picking it
+ * attaches a normal thread chip that carries its environment.
  */
 export function matchComposerThreadItems(input: {
   shells: ReadonlyArray<ComposerThreadCandidate>;

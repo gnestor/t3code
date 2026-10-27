@@ -93,7 +93,7 @@ export function useComposerMenuItems({
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
   const environmentThreadShells = useThreadShells(isPathTrigger);
-  // Other connected environments' threads attach as transcripts, like a sidebar drop.
+  // Threads on other connected environments are offered too, labeled with the environment's name.
   const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const environmentIdentities = useEnvironmentIdentities();
   const otherEnvironmentLabels = new Map(

@@ -35,6 +35,10 @@
       "types": "./src/worktreeSetup.ts",
       "default": "./src/worktreeSetup.ts"
     },
+    "./thread-relay/host": {
+      "types": "./src/threadRelay/host.ts",
+      "default": "./src/threadRelay/host.ts"
+    },
     "./load-balancing": {
       "types": "./src/load-balancing.ts",
       "default": "./src/load-balancing.ts"

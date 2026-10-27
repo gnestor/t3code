@@ -90,7 +90,7 @@ import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
 import { defaultUrlTransform } from "react-markdown";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
-import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
+import { parseThreadLink, parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { MarkdownThreadLink } from "./chat/MarkdownThreadLink";
 import { mathKind } from "@t3tools/shared/markdownMath";
@@ -1059,11 +1059,17 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const text = use(ChatMarkdownTextContext);
     const citation = href ? parseAssistantCitationHref(href) : null;
     if (citation) return <AssistantCitationChip citation={citation} />;
-    const linkedThreadId = href ? parseThreadLinkHref(href) : null;
-    if (linkedThreadId) {
-      const label = hastPlainTextDeep(node) || linkedThreadId;
-      return environmentId ? (
-        <MarkdownThreadLink environmentId={environmentId} threadId={linkedThreadId} label={label} />
+    const linkedThread = href ? parseThreadLink(href) : null;
+    if (linkedThread) {
+      const label = hastPlainTextDeep(node) || linkedThread.threadId;
+      const linkEnvironmentId = linkedThread.environmentId ?? environmentId;
+      return linkEnvironmentId ? (
+        <MarkdownThreadLink
+          environmentId={linkEnvironmentId}
+          environmentInLink={linkedThread.environmentId !== null}
+          threadId={linkedThread.threadId}
+          label={label}
+        />
       ) : (
         <span>{label}</span>
       );

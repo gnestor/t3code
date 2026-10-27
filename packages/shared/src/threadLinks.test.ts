@@ -3,9 +3,11 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import {
   formatThreadLink,
+  parseThreadLink,
   parseThreadLinkHref,
   relabelThreadLinks,
   resolveThreadLinkRef,
+  stampThreadLinkEnvironment,
 } from "./threadLinks.ts";
 
 const ref = (environmentId: string, threadId = "chat-1") => ({
@@ -109,5 +111,50 @@ describe("thread links", () => {
   it("formats a label that would otherwise break the Markdown link", () => {
     expect(formatThreadLink("t1", "Fix [ci] \\ build")).toBe("[Fix ci build](t3-thread://v1/t1)");
     expect(formatThreadLink("t1", " ] ")).toBe("[t1](t3-thread://v1/t1)");
+  });
+
+  it("carries the environment of a thread on another environment", () => {
+    const link = formatThreadLink("t1", "Fix", "env remote/1");
+    expect(link).toBe("[Fix](t3-thread://v1/t1?environmentId=env%20remote%2F1)");
+    const href = link.slice(link.indexOf("](") + 2, -1);
+    expect(parseThreadLink(href)).toEqual({
+      threadId: "t1",
+      environmentId: "env remote/1",
+    });
+    expect(parseThreadLinkHref(href)).toBe("t1");
+  });
+
+  it("reads links without an environment as before", () => {
+    expect(parseThreadLink("t3-thread://v1/t1")).toEqual({ threadId: "t1", environmentId: null });
+    expect(parseThreadLink("t3-thread://v1/t1?other=1")).toEqual({
+      threadId: "t1",
+      environmentId: null,
+    });
+    expect(parseThreadLink("t3-thread://v1/t1?environmentId=")).toEqual({
+      threadId: "t1",
+      environmentId: null,
+    });
+    expect(parseThreadLink("t3-thread://v1/?environmentId=env-1")).toBeNull();
+    expect(parseThreadLink("https://t3.codes/t1?environmentId=env-1")).toBeNull();
+  });
+
+  it("keeps a link's environment when relabeling", () => {
+    expect(
+      relabelThreadLinks(
+        "[a](t3-thread://v1/t1?environmentId=env-1) [b](t3-thread://v1/t1)",
+        () => "New",
+      ),
+    ).toBe("[New](t3-thread://v1/t1?environmentId=env-1) [New](t3-thread://v1/t1)");
+  });
+
+  it("names an environment in links that lack one and leaves the rest alone", () => {
+    expect(
+      stampThreadLinkEnvironment(
+        "[a](t3-thread://v1/t1) [b](t3-thread://v1/t2?environmentId=env-1) [c](https://t3.codes)",
+        "env 2",
+      ),
+    ).toBe(
+      "[a](t3-thread://v1/t1?environmentId=env%202) [b](t3-thread://v1/t2?environmentId=env-1) [c](https://t3.codes)",
+    );
   });
 });

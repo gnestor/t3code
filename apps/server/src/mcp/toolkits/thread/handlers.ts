@@ -22,6 +22,7 @@ import {
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
+import { routeThreadTool } from "../../ThreadRelayBroker.ts";
 import { ThreadToolkit } from "./tools.ts";
 
 function queueEntry(
@@ -103,19 +104,23 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
     }),
   ),
   t3_thread_search: McpToolAccess.reads((input) =>
-    Effect.gen(function* () {
-      const { caller } = yield* readCaller();
-      const threadSearch = yield* ThreadSearch.ThreadSearch;
-      const { matches } = yield* threadSearch
-        .searchThreads({ ...input, projectId: input.projectId ?? caller?.projectId })
-        .pipe(Effect.mapError(unavailable));
-      return {
-        matches: matches.map((match) => ({
-          ...match,
-          link: formatThreadLink(match.threadId, match.title),
-        })),
-      };
-    }),
+    routeThreadTool(
+      "search",
+      input,
+      Effect.gen(function* () {
+        const { caller } = yield* readCaller();
+        const threadSearch = yield* ThreadSearch.ThreadSearch;
+        const { matches } = yield* threadSearch
+          .searchThreads({ ...input, projectId: input.projectId ?? caller?.projectId })
+          .pipe(Effect.mapError(unavailable));
+        return {
+          matches: matches.map((match) => ({
+            ...match,
+            link: formatThreadLink(match.threadId, match.title),
+          })),
+        };
+      }),
+    ),
   ),
   t3_thread_fork: writesThread((input) =>
     Effect.gen(function* () {

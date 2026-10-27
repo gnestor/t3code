@@ -5,6 +5,7 @@ import {
   OrchestratorMcpFailure,
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
+  type ProviderInteractionMode,
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -36,8 +37,17 @@ export interface McpClientCaller {
 }
 
 /** Read-only clients map to the lowest mode because McpToolAccess blocks writes first. */
-export const clientRuntimeModeCeiling = (client: McpClientCaller | undefined): RuntimeMode =>
+const clientRuntimeModeCeiling = (client: McpClientCaller | undefined): RuntimeMode =>
   client === undefined || client.access === "read-only" ? "approval-required" : client.access;
+
+/** A thread on another environment, relayed through a connected app. It has no local thread row. */
+export interface McpRemoteCaller {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly title: string;
+  readonly runtimeMode: RuntimeMode;
+  readonly interactionMode: ProviderInteractionMode;
+}
 
 /** Thread callers default to their own thread; client callers need thread for tools that act as the caller. */
 export interface McpInvocationScope {
@@ -47,7 +57,31 @@ export interface McpInvocationScope {
   readonly requestNamespace: string;
   readonly thread: McpThreadCaller | undefined;
   readonly client: McpClientCaller | undefined;
+  readonly remote?: McpRemoteCaller | undefined;
 }
+
+const RUNTIME_MODE_RANK: Record<RuntimeMode, number> = {
+  "approval-required": 0,
+  "auto-accept-edits": 1,
+  auto: 2,
+  "full-access": 3,
+};
+
+/** Limits of a caller with no local thread: the client's ceiling, narrowed by a relayed remote thread. */
+export const threadlessCallerLimits = (
+  scope: Pick<McpInvocationScope, "client" | "remote">,
+): { readonly runtimeMode: RuntimeMode; readonly interactionMode: ProviderInteractionMode } => {
+  const ceiling = clientRuntimeModeCeiling(scope.client);
+  const { remote } = scope;
+  if (remote === undefined) return { runtimeMode: ceiling, interactionMode: "default" };
+  return {
+    runtimeMode:
+      RUNTIME_MODE_RANK[remote.runtimeMode] < RUNTIME_MODE_RANK[ceiling]
+        ? remote.runtimeMode
+        : ceiling,
+    interactionMode: remote.interactionMode,
+  };
+};
 
 export class McpInvocationContext extends Context.Service<
   McpInvocationContext,

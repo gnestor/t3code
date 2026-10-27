@@ -1,7 +1,7 @@
 import {
   ScheduledTaskId,
   ScheduledTask,
-  OrchestrationSearchThreadsInput,
+  OrchestratorMcpThreadSearchInput,
   OrchestrationThreadSearchMatch,
   OrchestrationV2ThreadForkSourcePoint,
   OrchestrationV2ContextTransfer,
@@ -17,13 +17,13 @@ import {
   ThreadId,
   RunId,
   NonNegativeInt,
-  ProjectId,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
+import * as ThreadRelayBroker from "../../ThreadRelayBroker.ts";
 import * as ScheduledTaskService from "../../../scheduledTasks/ScheduledTaskService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -238,11 +238,8 @@ const ThreadTransfersTool = Tool.make("t3_thread_transfers", {
 const ThreadSearchTool = Tool.make("t3_thread_search", {
   ...commandTool,
   description:
-    "Search active threads by title, branch, PR, project, then message text. Skips subagent threads. `projectId`: one project, else yours, else all outside a thread. Not exhaustive.",
-  parameters: Schema.Struct({
-    ...OrchestrationSearchThreadsInput.fields,
-    projectId: Schema.optional(ProjectId),
-  }),
+    "Search active threads by title, branch, PR, project, then message text. Skips subagent threads. `projectId`: one project, else yours, else all outside a thread. `environmentId`: another environment, through a connected app. Not exhaustive.",
+  parameters: OrchestratorMcpThreadSearchInput,
   success: Schema.Struct({
     matches: Schema.Array(
       Schema.Struct({
@@ -256,7 +253,11 @@ const ThreadSearchTool = Tool.make("t3_thread_search", {
       }),
     ),
   }),
-  dependencies: [...commandTool.dependencies, ThreadSearch.ThreadSearch],
+  dependencies: [
+    ...commandTool.dependencies,
+    ThreadSearch.ThreadSearch,
+    ThreadRelayBroker.ThreadRelayBroker,
+  ],
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);

@@ -11,6 +11,8 @@ import { ThreadContextChip } from "../ThreadContextChip";
 
 export function MarkdownThreadLink(props: {
   readonly environmentId: EnvironmentId;
+  /** The link named its environment, so a copy of it must too. */
+  readonly environmentInLink?: boolean;
   readonly threadId: ThreadId;
   readonly label: string;
 }) {
@@ -33,7 +35,11 @@ export function MarkdownThreadLink(props: {
   return (
     <ThreadContextChip
       record={{ environmentId, threadId, title: props.label }}
-      copyMarkdown={formatThreadLink(threadId, title)}
+      copyMarkdown={formatThreadLink(
+        threadId,
+        title,
+        props.environmentInLink === true ? environmentId : undefined,
+      )}
     />
   );
 }

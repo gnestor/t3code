@@ -1,4 +1,4 @@
-import { ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -9,11 +9,39 @@ const THREAD_LINK_OUTSIDE_CODE =
   /(?<fence>(`{3,}|~{3,})[\s\S]*?(?:\2|$))|(?<span>(`+)[^\n]*?\4)|\[[^\]\n]*\]\((?<href>t3-thread:\/\/v1\/[^\s)]+)\)/g;
 
 const decodeThreadId = Schema.decodeUnknownOption(ThreadId);
+const decodeEnvironmentId = Schema.decodeUnknownOption(EnvironmentId);
+const ENVIRONMENT_PARAM = "environmentId";
 
-/** The id as written. Thread ids can hold percent escapes of their own, so it is not decoded. */
-export function parseThreadLinkHref(href: string): ThreadId | null {
+export interface ThreadLink {
+  readonly threadId: ThreadId;
+  /** Set for a thread on a specific environment; null means the environment of the message holding the link. */
+  readonly environmentId: EnvironmentId | null;
+}
+
+/**
+ * `t3-thread://v1/<threadId>` with an optional `?environmentId=<id>`. The thread id is as
+ * written: ids can hold percent escapes of their own, so it is not decoded.
+ */
+export function parseThreadLink(href: string): ThreadLink | null {
   if (!href.startsWith(THREAD_LINK_HREF_PREFIX)) return null;
-  return Option.getOrNull(decodeThreadId(href.slice(THREAD_LINK_HREF_PREFIX.length)));
+  const rest = href.slice(THREAD_LINK_HREF_PREFIX.length);
+  const queryStart = rest.indexOf("?");
+  const threadId = Option.getOrNull(
+    decodeThreadId(queryStart === -1 ? rest : rest.slice(0, queryStart)),
+  );
+  if (threadId === null) return null;
+  const written =
+    queryStart === -1
+      ? null
+      : new URLSearchParams(rest.slice(queryStart + 1)).get(ENVIRONMENT_PARAM);
+  return {
+    threadId,
+    environmentId: written === null ? null : Option.getOrNull(decodeEnvironmentId(written)),
+  };
+}
+
+export function parseThreadLinkHref(href: string): ThreadId | null {
+  return parseThreadLink(href)?.threadId ?? null;
 }
 
 export function percentDecodedThreadLinkId(threadId: ThreadId): ThreadId | null {
@@ -49,12 +77,26 @@ export function resolveThreadLinkRef(
   return null;
 }
 
-export function formatThreadLink(threadId: string, label: string): string {
+export function formatThreadLink(
+  threadId: string,
+  label: string,
+  environmentId?: string | null,
+): string {
   const cleaned = label
     .replace(/[[\]\\\r\n]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return `[${cleaned || threadId}](${THREAD_LINK_HREF_PREFIX}${threadId})`;
+  const query = environmentId ? `?${ENVIRONMENT_PARAM}=${encodeURIComponent(environmentId)}` : "";
+  return `[${cleaned || threadId}](${THREAD_LINK_HREF_PREFIX}${threadId}${query})`;
+}
+
+/** Names `environmentId` in every thread link that does not already carry one. */
+export function stampThreadLinkEnvironment(markdown: string, environmentId: string): string {
+  const query = `?${ENVIRONMENT_PARAM}=${encodeURIComponent(environmentId)}`;
+  return markdown.replace(
+    /\]\((t3-thread:\/\/v1\/[^\s)?]+)\)/g,
+    (_, href: string) => `](${href}${query})`,
+  );
 }
 
 export function hasThreadLinks(markdown: string): boolean {
@@ -69,14 +111,15 @@ export function relabelThreadLinks(
   return markdown.replace(THREAD_LINK_OUTSIDE_CODE, (source, ...args) => {
     const href = (args.at(-1) as { href?: string }).href;
     if (href === undefined) return source;
-    const written = parseThreadLinkHref(href);
-    if (written === null) return source;
+    const link = parseThreadLink(href);
+    if (link === null) return source;
+    const written = link.threadId;
     const decoded = percentDecodedThreadLinkId(written);
     const threadId =
       title(written) === undefined && decoded !== null && title(decoded) !== undefined
         ? decoded
         : written;
     const label = title(threadId)?.trim();
-    return label ? formatThreadLink(threadId, label) : source;
+    return label ? formatThreadLink(threadId, label, link.environmentId) : source;
   });
 }

@@ -311,6 +311,8 @@ export interface ChatComposerHandle {
   collapseForTimelineScrollKey: (key: string) => void;
   addDroppedFiles: (files: File[]) => void;
   addDroppedFolders: (folders: File[]) => void;
+  /** Attaches a saved transcript of a thread from another environment. */
+  attachThreadTranscript: (ref: ScopedThreadRef) => Promise<void>;
   hasPendingAttachments: () => boolean;
   insertTextAtEnd: (
     text: string,
@@ -1908,10 +1910,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
 
   const { onUsageLimitsCommand } = props;
-  // A remote `@` pick attaches through the drop import, declared below after attachment intake.
-  const importThreadTranscriptRef = useRef<
-    (ref: ScopedThreadRef, isActive: () => boolean) => Promise<void>
-  >(async () => {});
   const onSelectComposerItem = (item: ComposerCommandItem) => {
     if (composerSelectLockRef.current) return;
     composerSelectLockRef.current = true;
@@ -2028,20 +2026,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     if (item.type === "thread") {
       if (trigger.kind !== "path") return;
-      if (item.thread.environmentId !== environmentId) {
-        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
-          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
-        });
-        if (applied) {
-          setComposerHighlightedItemId(null);
-          const targetKey = attachmentTargetKey;
-          void importThreadTranscriptRef.current(
-            item.thread,
-            () => attachmentTargetKeyRef.current === targetKey,
-          );
-        }
-        return;
-      }
       const shell = readThreadShell(item.thread);
       if (!shell) return;
       const record = threadContextRecord(item.thread, shell.title);
@@ -2928,11 +2912,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
   );
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- the `@` handler is declared before attachment intake, so it reaches this import through a ref
-  useLayoutEffect(() => {
-    importThreadTranscriptRef.current = importThreadTranscript;
-  });
-
   useThreadContextDrop(composerFormRef, environmentId, attachmentTargetKey, (refs, isActive) => {
     const records = refs.flatMap((ref) => {
       if (ref.environmentId !== environmentId) {
@@ -3105,6 +3084,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
       },
       addDroppedFolders: addComposerFoldersStable,
+      attachThreadTranscript: (ref) => {
+        const targetKey = attachmentTargetKey;
+        return importThreadTranscript(ref, () => attachmentTargetKeyRef.current === targetKey);
+      },
       hasPendingAttachments: () =>
         countPreparingComposerImages(attachmentTargetKey) > 0 ||
         pendingDraftWork.has(attachmentTargetKey),
@@ -3323,6 +3306,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerPreviewAnnotations,
       composerReviewComments,
       focusComposer,
+      attachmentTargetKey,
+      importThreadTranscript,
       environmentId,
       primaryEnvironmentId,
       isConnecting,

@@ -274,19 +274,26 @@ by any part of its pull request numbers. A complete number is also resolved dire
 pull request is older than the recent list. Type a single word after `#` to search pull requests in
 the repository by text. Choose a result to insert it as a chip.
 
-Another thread can be context too. Type `@` followed by part of its title to pick one from
-the same server, or on web and desktop drag a thread out of the sidebar and drop it on the
-composer; a multi-selection drops together. The chip shows the thread's current title and
-opens it when selected. Your prompt only carries a reference: the agent reads the thread's
-history on demand, so attaching a long thread costs nothing until the agent looks. Attaching a
-thread does not change it, and the agent cannot send messages to it unless you ask.
+Another thread can be context too. Type `@` followed by part of its title to pick one, or on web
+and desktop drag a thread out of the sidebar and drop it on the composer; a multi-selection drops
+together. The chip shows the thread's current title and opens it when selected. Your prompt only
+carries a reference: the agent reads the thread's history on demand, so attaching a long thread
+costs nothing until the agent looks. Attaching a thread does not change it, and the agent cannot
+send messages to it unless you ask.
 
-Dropping a thread from another environment, or picking one with `@` on web and desktop, attaches
-a saved transcript file; `@` labels those threads with their environment's name. The source
-environment must be connected and up to date. The transcript includes the visible history and
-saved text context at the time it is attached; later messages and the contents of attached files
-are not copied. The agent can read the saved transcript after the source disconnects. Normal
-file attachment limits apply.
+`@` also offers threads on your other connected environments, labeled with the environment's name.
+Their chips work like any other, but the agent reaches them only while
+[agents can reach other environments](./remote-access.md#let-agents-reach-threads-on-other-environments)
+is on and a T3 Code app connected to both environments is open. If that isn't so, sending stops and
+says why: turn the setting on, reconnect the environment, or remove the chip. When the environment
+is connected, the message also offers **Attach transcript instead**, which swaps the chip for a
+saved transcript.
+
+Dropping a thread from another environment on web and desktop attaches a saved transcript file
+rather than a chip. The source environment must be connected and up to date. The transcript
+includes the visible history and saved text context at the time it is attached; later messages and
+the contents of attached files are not copied. The agent can read the saved transcript after the
+source disconnects. Normal file attachment limits apply.
 
 Images keep their thumbnail shelf above the text and also get a chip at your cursor, so you can
 say exactly which image you mean. Deleting an image chip leaves the image on the shelf; removing

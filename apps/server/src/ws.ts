@@ -187,6 +187,8 @@ import * as StorageCleanup from "./storageCleanup.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import { terminalOutputStream, withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
+import * as ThreadRelayBroker from "./mcp/ThreadRelayBroker.ts";
+import * as ThreadRelayExecution from "./mcp/ThreadRelayExecution.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
@@ -1255,6 +1257,8 @@ export const layerWsRpc = (
       const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
       const eventLoopMonitor = yield* EventLoopMonitor.EventLoopMonitor;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
+      const threadRelayBroker = yield* ThreadRelayBroker.ThreadRelayBroker;
+      const threadRelayExecution = yield* ThreadRelayExecution.ThreadRelayExecution;
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
@@ -3065,6 +3069,14 @@ export const layerWsRpc = (
         [WS_METHODS.previewReportProfiles]: (input) => serverBrowser.reportProfiles(input),
         [WS_METHODS.previewReportStatus]: (input) => previewManager.reportStatus(input),
         [WS_METHODS.subscribePreviewEvents]: (_input) => previewManager.events,
+        [WS_METHODS.threadRelayConnect]: (input) =>
+          Stream.unwrap(threadRelayBroker.connect(currentSessionId, input)),
+        [WS_METHODS.threadRelayUpdateHost]: (input) =>
+          threadRelayBroker.updateHost(currentSessionId, input),
+        [WS_METHODS.threadRelayRespond]: (input) =>
+          threadRelayBroker.respond(currentSessionId, input),
+        [WS_METHODS.threadRelayInvoke]: (input) =>
+          threadRelayExecution.invoke(currentSession, input),
         [WS_METHODS.deviceConfigure]: (input) => deviceService.configure(input),
         [WS_METHODS.deviceTestHost]: (input) => deviceService.testHost(input),
         [WS_METHODS.deviceEasAccount]: (input) => deviceService.easAccount(input),
@@ -3302,6 +3314,8 @@ export const layer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
+    const threadRelayBroker = yield* ThreadRelayBroker.ThreadRelayBroker;
+    const threadRelayExecution = yield* ThreadRelayExecution.ThreadRelayExecution;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
@@ -3383,6 +3397,10 @@ export const layer = Layer.unwrap(
               Layer.provide(AgentSessionScanner.layer),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
+              Layer.provide(Layer.succeed(ThreadRelayBroker.ThreadRelayBroker, threadRelayBroker)),
+              Layer.provide(
+                Layer.succeed(ThreadRelayExecution.ThreadRelayExecution, threadRelayExecution),
+              ),
               // Share server-lifetime PR caches so WS mutations invalidate every client's HTTP diffs.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
               Layer.provide(OtlpEndpointCheck.layer),

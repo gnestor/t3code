@@ -4,6 +4,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import {
   ContextTransferId,
+  EnvironmentId,
   IsoDateTime,
   MessageId,
   NodeId,
@@ -30,6 +31,7 @@ import {
   ThreadPullRequestKey,
   ThreadPullRequestLinkSource,
 } from "./threadPullRequest.ts";
+import { OrchestrationSearchThreadsInput } from "./threadSearch.ts";
 import { ThreadTitleRegeneration } from "./threadTitle.ts";
 import {
   OrchestrationV2Actor,
@@ -289,8 +291,21 @@ const OrchestratorMcpProjectTarget = Schema.optional(
   }),
 );
 
+const OrchestratorMcpEnvironmentTarget = Schema.optional(
+  EnvironmentId.annotate({
+    description:
+      "Environment that owns the thread. Default: your own. Reached through a connected T3 Code app.",
+  }),
+);
+
 export const OrchestratorMcpThreadListInput = Schema.Struct({
-  projectId: OrchestratorMcpProjectTarget,
+  environmentId: OrchestratorMcpEnvironmentTarget,
+  projectId: Schema.optional(
+    ProjectId.annotate({
+      description:
+        "Project to use. Default: your thread's project. Required outside a thread and with environmentId (take it from a t3_thread_search match on that environment).",
+    }),
+  ),
   statuses: Schema.optional(
     Schema.Array(OrchestratorMcpThreadStatus).check(Schema.isMaxLength(10)),
   ),
@@ -362,6 +377,7 @@ const clampedPositiveInt = (maximum: number) =>
   );
 
 export const OrchestratorMcpThreadReadInput = Schema.Struct({
+  environmentId: OrchestratorMcpEnvironmentTarget,
   threadId: ThreadId,
   itemId: Schema.optional(TurnItemId),
   textOffset: Schema.optional(NonNegativeInt),
@@ -456,6 +472,7 @@ export const OrchestratorMcpThreadReadResult = Schema.Struct({
 export type OrchestratorMcpThreadReadResult = typeof OrchestratorMcpThreadReadResult.Type;
 
 export const OrchestratorMcpThreadSendInput = Schema.Struct({
+  environmentId: OrchestratorMcpEnvironmentTarget,
   threadId: ThreadId,
   message: OrchestratorMcpPrompt,
   mode: Schema.optional(Schema.Literals(["auto", "queue", "steer", "restart"])),
@@ -475,11 +492,19 @@ export const OrchestratorMcpThreadSendResult = Schema.Struct({
 export type OrchestratorMcpThreadSendResult = typeof OrchestratorMcpThreadSendResult.Type;
 
 export const OrchestratorMcpThreadWaitInput = Schema.Struct({
+  environmentId: OrchestratorMcpEnvironmentTarget,
   threadId: ThreadId,
   runId: Schema.optional(RunId),
   timeoutMs: Schema.optional(Schema.Finite),
 });
 export type OrchestratorMcpThreadWaitInput = typeof OrchestratorMcpThreadWaitInput.Type;
+
+export const OrchestratorMcpThreadSearchInput = Schema.Struct({
+  ...OrchestrationSearchThreadsInput.fields,
+  projectId: Schema.optional(ProjectId),
+  environmentId: OrchestratorMcpEnvironmentTarget,
+});
+export type OrchestratorMcpThreadSearchInput = typeof OrchestratorMcpThreadSearchInput.Type;
 
 export const OrchestratorMcpThreadWaitResult = Schema.Struct({
   threadId: ThreadId,

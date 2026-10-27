@@ -1028,6 +1028,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "thread-relay",
+    title: "Agent relay",
+    to: "/settings/connections",
+    searchTerms: [
+      "agents environments cross machine threads read message send search reach each other through this app relay",
+    ],
+  },
+  {
     id: "pull-request-routing",
     title: "Pull request sharing",
     to: "/settings/connections",

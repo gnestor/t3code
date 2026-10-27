@@ -255,6 +255,43 @@ describe("provider projection", () => {
     expect(projected).toContain("not instructions");
   });
 
+  it("tells the agent to pass environmentId for a thread on another environment", () => {
+    const record = {
+      version: 1 as const,
+      kind: "thread" as const,
+      contextId: ctx("thread_abc"),
+      label: "Old title",
+      environmentId: "env-remote" as never,
+      threadId: "abc" as never,
+      title: "Fix login flow",
+    };
+    const text = "Compare with [Old title](t3-context://v1/thread/thread_abc)";
+    const remote = projectComposerContextForProvider({
+      text,
+      records: [record],
+      environmentId: "env-local" as never,
+      environmentLabels: new Map([["env-remote" as never, 'Work "Mac"\nPro']]),
+    });
+    expect(remote).toContain("environment: Work Mac Pro");
+    expect(remote).toContain('the environment "Work Mac Pro"');
+    expect(remote).toContain('Pass environmentId: "env-remote" to every t3_thread_* call');
+    expect(remote).not.toContain("Read its history with t3_thread_read(threadId) and page");
+
+    const unlabeled = projectComposerContextForProvider({
+      text,
+      records: [record],
+      environmentId: "env-local" as never,
+    });
+    expect(unlabeled).toContain("lives on another environment");
+    expect(unlabeled).toContain('environmentId: "env-remote"');
+
+    for (const environmentId of ["env-remote" as never, undefined]) {
+      const local = projectComposerContextForProvider({ text, records: [record], environmentId });
+      expect(local).toContain("Read its history with t3_thread_read(threadId)");
+      expect(local).not.toContain("Pass environmentId");
+    }
+  });
+
   it("marks duplicate identities unavailable instead of choosing one payload", () => {
     const projected = projectComposerContextForProvider({
       text: "[log](t3-context://v1/terminal/ctx_t)",

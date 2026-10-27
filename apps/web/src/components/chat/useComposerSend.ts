@@ -85,7 +85,12 @@ import {
 import { environmentServerConfigsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { runMobileComposerTransition } from "./draftHeroTransition";
-import { useClientSettingsHydrated, useEnvironmentSettings } from "../../hooks/useSettings";
+import {
+  useClientSettings,
+  useClientSettingsHydrated,
+  useEnvironmentSettings,
+} from "../../hooks/useSettings";
+import { useConnectedEnvironmentIds } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import {
   approvalRedirectNotice,
@@ -110,6 +115,7 @@ import { readEnvironmentScope } from "../../state/session";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+  replaceComposerContextReferences,
   threadContextsOutsideEnvironment,
 } from "@t3tools/shared/composerContextReferences";
 import {
@@ -123,7 +129,7 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import type { UnifiedSettings } from "@t3tools/contracts";
+import type { ClientSettings, ThreadContextRecord, UnifiedSettings } from "@t3tools/contracts";
 import type { Dispatch } from "react";
 import type { ComposerThreadTarget } from "../../composerDraftStore";
 import type { ProviderInstanceEntry } from "../../providerInstances";
@@ -143,6 +149,7 @@ import type { useWorktreeSetup } from "./useWorktreeSetup";
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
 
 const selectPlanModeEnabled = (settings: UnifiedSettings) => settings.planModeEnabled;
+const selectThreadRelayEnabled = (settings: ClientSettings) => settings.threadRelayEnabled;
 
 function readEnvironmentPresentation(environmentId: EnvironmentId) {
   return appAtomRegistry.get(environmentPresentations.presentationsAtom).get(environmentId);
@@ -324,6 +331,8 @@ export function useComposerSend(input: ComposerSendInput) {
   const navigate = useNavigate();
   const clientSettingsHydrated = useClientSettingsHydrated();
   const planModeEnabled = useEnvironmentSettings(environmentId, selectPlanModeEnabled);
+  const threadRelayEnabled = useClientSettings(selectThreadRelayEnabled);
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
@@ -382,6 +391,27 @@ export function useComposerSend(input: ComposerSendInput) {
     pendingApprovalsRef.current = pendingApprovals;
     respondingRequestIdsRef.current = respondingRequestIds;
   }, [pendingApprovals, respondingRequestIds]);
+
+  const replaceThreadContextWithTranscript = (record: ThreadContextRecord) => {
+    const composer = composerRef.current;
+    if (!composer || currentRouteThreadKeyRef.current !== routeThreadKey) return;
+    const prompt = replaceComposerContextReferences(promptRef.current, (occurrence) =>
+      occurrence.contextId === record.contextId ? "" : occurrence.source,
+    );
+    promptRef.current = prompt;
+    setComposerDraftPrompt(composerDraftTarget, prompt);
+    setComposerDraftThreadContexts(
+      composerDraftTarget,
+      (
+        useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.threadContexts ?? []
+      ).filter((candidate) => candidate.contextId !== record.contextId),
+    );
+    composer.resetCursorState({ prompt, cursor: prompt.length });
+    void composer.attachThreadTranscript({
+      environmentId: record.environmentId,
+      threadId: record.threadId,
+    });
+  };
 
   const onSend = async (
     e?: { preventDefault: () => void },
@@ -538,20 +568,34 @@ export function useComposerSend(input: ComposerSendInput) {
           previewAnnotationContextReference(directAnnotation.annotation),
         ])
       : promptRef.current;
+    // An agent reaches another environment's thread only through a connected app with the relay on.
     const strandedThread = threadContextsOutsideEnvironment({
       text: promptForSend,
       records: composerThreadContexts,
       environmentId,
-    })[0];
+    }).find(
+      (record) => !threadRelayEnabled || !connectedEnvironmentIds.includes(record.environmentId),
+    );
     if (strandedThread) {
       const owner =
         readEnvironmentPresentation(strandedThread.environmentId)?.entry.target.label ??
         "its machine";
+      const ownerConnected = connectedEnvironmentIds.includes(strandedThread.environmentId);
       toastManager.add(
         stackedThreadToast({
           type: "warning",
           title: "Attached thread is on another machine",
-          description: `This machine's agent can't read "${strandedThread.title}". Remove it, or switch back to ${owner} to send.`,
+          description: !ownerConnected
+            ? `This machine's agent can't read "${strandedThread.title}" while ${owner} is disconnected. Reconnect it, remove the thread, or switch back to ${owner} to send.`
+            : `This machine's agent can't read "${strandedThread.title}". Turn on "Let agents on my environments reach each other through this app" in Settings, or switch back to ${owner} to send.`,
+          ...(ownerConnected && composerRef.current
+            ? {
+                actionProps: {
+                  children: "Attach transcript instead",
+                  onClick: () => replaceThreadContextWithTranscript(strandedThread),
+                },
+              }
+            : {}),
         }),
       );
       return;

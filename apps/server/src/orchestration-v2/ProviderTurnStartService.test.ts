@@ -3,6 +3,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
   CheckpointScopeId,
+  EnvironmentId,
   MessageId,
   NodeId,
   ProviderSessionId,
@@ -46,6 +47,10 @@ import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import {
+  layerTestServerEnvironmentIdentity,
+  TEST_SERVER_ENVIRONMENT_ID,
+} from "./testkit/serverEnvironmentIdentity.ts";
 
 const isDomainEvent = Schema.is(OrchestrationV2DomainEvent);
 
@@ -179,6 +184,7 @@ function startWithMissingWorktree(
         }),
         Layer.mock(RunExecutionService.RunExecutionServiceV2)({ startRootRun }),
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({}),
+        layerTestServerEnvironmentIdentity,
       ),
     ),
   );
@@ -255,6 +261,7 @@ it.each([
 
 function makeLocalCommandHarness(input: {
   readonly text: string;
+  readonly context?: OrchestrationV2ThreadProjection["messages"][number]["context"];
   readonly worktreePath?: string;
   readonly worktreesDir?: string;
   readonly fileSystem?: FileSystem.FileSystem;
@@ -330,6 +337,7 @@ function makeLocalCommandHarness(input: {
     nodeId: rootNodeId,
     role: "user",
     text: input.text,
+    ...(input.context === undefined ? {} : { context: input.context }),
     attachments: [],
     streaming: false,
     createdBy: "user",
@@ -625,7 +633,7 @@ function makeLocalCommandHarness(input: {
         )
       : Effect.void,
   );
-  const tryHandlePromptCommand = vi.fn(() =>
+  const tryHandlePromptCommand = vi.fn((_input: { readonly text: string }) =>
     input.logoutFailure === undefined
       ? Effect.succeed(true)
       : Effect.fail(
@@ -736,6 +744,7 @@ function makeLocalCommandHarness(input: {
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({
           resolve: resolveRuntimePolicy,
         }),
+        layerTestServerEnvironmentIdentity,
       ),
     ),
   );
@@ -1179,6 +1188,46 @@ effectIt.effect("does not mistake a failed state read for a superseded run", () 
     expect(startCheck._tag).toBe("ProjectionStoreReadError");
     expect(finalizeCheck._tag).toBe("ProjectionStoreReadError");
   }),
+);
+
+effectIt.effect(
+  "projects an attached thread from another environment with the environmentId instruction",
+  () =>
+    Effect.gen(function* () {
+      const threadRecord = (environmentId: EnvironmentId) => ({
+        version: 1 as const,
+        kind: "thread" as const,
+        contextId: "thread_abc" as never,
+        label: "Old title",
+        environmentId,
+        threadId: ThreadId.make("abc"),
+        title: "Fix login flow",
+      });
+      const text = "/logout [Old title](t3-context://v1/thread/thread_abc)";
+
+      const remote = makeLocalCommandHarness({
+        text,
+        previousNativeSession: true,
+        context: {
+          version: 1,
+          records: [threadRecord(EnvironmentId.make("environment-remote"))],
+        },
+      });
+      yield* remote.start;
+      expect(remote.tryHandlePromptCommand).toHaveBeenCalledOnce();
+      const remoteText = remote.tryHandlePromptCommand.mock.calls[0]![0].text;
+      expect(remoteText).toContain('Pass environmentId: "environment-remote" to every t3_thread_*');
+
+      const local = makeLocalCommandHarness({
+        text,
+        previousNativeSession: true,
+        context: { version: 1, records: [threadRecord(TEST_SERVER_ENVIRONMENT_ID)] },
+      });
+      yield* local.start;
+      const localText = local.tryHandlePromptCommand.mock.calls[0]![0].text;
+      expect(localText).toContain("Read its history with t3_thread_read(threadId)");
+      expect(localText).not.toContain("Pass environmentId");
+    }),
 );
 
 effectIt.effect(

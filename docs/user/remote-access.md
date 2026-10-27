@@ -247,6 +247,20 @@ Claude Code, Codex, ChatGPT and other agents T3 Code did not start can drive
 threads on an environment through its MCP server. See
 [outside agents](./outside-agents.md) for setup.
 
+## Let agents reach threads on other environments
+
+Agents on one environment can read, search, wait on, and message threads on another
+environment you use. Turn on **Let agents on my environments reach each other through this app**
+in **Settings → Connections**. It appears once you have two or more environments and is off by
+default.
+
+Requests go through the T3 Code app you have open, not directly between the machines. That app
+must be connected to both environments and stay open while the agent works. If it isn't, the
+agent's call fails and reports the environment as unreachable. Messages sent this way name the
+thread and environment they came from, and the target thread can't run with broader modes than
+the thread that sent the message. Turn the setting off to keep each environment's agents to their
+own threads.
+
 ## Manage or revoke access
 
 On the host, **Settings → Connections** lets authorized administrators create
