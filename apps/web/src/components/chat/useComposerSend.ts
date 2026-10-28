@@ -606,10 +606,10 @@ export function useComposerSend(input: ComposerSendInput) {
           type: "warning",
           title: "Attached thread is on another machine",
           description: !ownerConnected
-            ? `The agent on ${here} can't read "${strandedThread.title}" while ${owner} is disconnected. Reconnect it, remove the thread, or switch back to ${owner} to send.`
+            ? `The agent on ${here} can't read "${strandedThread.title}" while ${owner} is disconnected. Reconnect it, remove the thread, or switch to it to send.`
             : !threadRelayEnabled
-              ? `The agent on ${here} can't read "${strandedThread.title}". Turn on "Let agents on my environments reach each other through this app" in Settings, or switch back to ${owner} to send.`
-              : `The agent on ${here} can't read "${strandedThread.title}" because ${withoutRelay} runs a T3 Code version without the thread relay. Update it, or switch back to ${owner} to send.`,
+              ? `The agent on ${here} can't read "${strandedThread.title}". Turn on "Let agents on my environments reach each other through this app" in Settings, or switch to ${owner} to send.`
+              : `The agent on ${here} can't read "${strandedThread.title}" because ${withoutRelay} runs a T3 Code version without the thread relay. Update it, or switch to ${withoutRelay === owner ? "it" : owner} to send.`,
           ...(ownerConnected && composerRef.current
             ? {
                 actionProps: {
