@@ -266,10 +266,23 @@ export const GuestMessageAttribution = Schema.Struct({
 });
 export type GuestMessageAttribution = typeof GuestMessageAttribution.Type;
 
+/**
+ * Marks a user message as sent by an agent on another environment through the thread relay. The
+ * message `text` keeps the provenance line the agent reads; clients show `text` here. Only the server sets it.
+ */
+export const RelayedMessageAttribution = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  title: Schema.String.check(Schema.isMaxLength(512)),
+  text: Schema.String.check(Schema.isMaxLength(120_000)),
+});
+export type RelayedMessageAttribution = typeof RelayedMessageAttribution.Type;
+
 /** Structured context riding on a user message. Undecodable records are dropped, not fatal. */
 export const OrchestrationMessageContext = Schema.Struct({
   version: Schema.Literal(1),
   guest: Schema.optional(GuestMessageAttribution),
+  relay: Schema.optional(RelayedMessageAttribution),
   records: Schema.Array(Schema.Unknown)
     .check(
       Schema.isMaxLength(COMPOSER_CONTEXT_MAX_RECORDS),

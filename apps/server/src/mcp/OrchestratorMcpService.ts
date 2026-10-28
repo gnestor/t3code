@@ -117,14 +117,15 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
 
-/** A relayed message has no local sender thread, so its origin travels in the text both the user and the agent read. */
+const relayedThreadTitle = (remote: NonNullable<McpInvocationScope["remote"]>): string =>
+  remote.title.replace(/\s+/g, " ").trim().slice(0, 120);
+
+/** A relayed message has no local sender thread, so the agent reads its origin in the text; clients show `context.relay`. */
 const relayedMessageText = (
   remote: NonNullable<McpInvocationScope["remote"]>,
   message: string,
-): string => {
-  const title = remote.title.replace(/\s+/g, " ").trim().slice(0, 120);
-  return `[Relayed from thread ${JSON.stringify(title)} (${remote.threadId}) on environment ${remote.environmentId}]\n\n${message}`;
-};
+): string =>
+  `[Relayed from thread ${JSON.stringify(relayedThreadTitle(remote))} (${remote.threadId}) on environment ${remote.environmentId}]\n\n${message}`;
 const TASK_WAKE_EVENTS = [
   { thread: "parent", eventType: "subagent.updated" },
   { thread: "child", eventType: "run.updated" },
@@ -2845,10 +2846,21 @@ const make = Effect.gen(function* () {
           threadId: input.threadId,
           ...(parent === undefined ? {} : { senderThreadId: parent.thread.id }),
           messageId,
-          text:
-            scope.remote === undefined
-              ? input.message
-              : relayedMessageText(scope.remote, input.message),
+          ...(scope.remote === undefined
+            ? { text: input.message }
+            : {
+                text: relayedMessageText(scope.remote, input.message),
+                context: {
+                  version: 1,
+                  records: [],
+                  relay: {
+                    environmentId: scope.remote.environmentId,
+                    threadId: scope.remote.threadId,
+                    title: relayedThreadTitle(scope.remote),
+                    text: input.message,
+                  },
+                },
+              }),
           attachments: [],
           mode,
           createdBy: "agent",

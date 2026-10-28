@@ -377,6 +377,9 @@ const failureCode = (reason: ThreadRelayErrorReason): OrchestratorMcpFailure["co
       return "capability_denied";
     case "invalid_input":
       return "invalid_request";
+    case "unreachable":
+    case "host_disconnected":
+      return "environment_unreachable";
     default:
       return "orchestration_error";
   }
@@ -424,7 +427,9 @@ export const routeThreadTool = Effect.fn("ThreadRelayBroker.routeThreadTool")(fu
         (error) =>
           new OrchestratorMcpFailure({
             code:
-              error._tag === "ThreadRelayError" ? failureCode(error.reason) : "orchestration_error",
+              error._tag === "ThreadRelayError"
+                ? failureCode(error.reason)
+                : "environment_unreachable",
             message: error.message,
           }),
       ),

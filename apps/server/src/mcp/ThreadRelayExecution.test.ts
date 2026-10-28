@@ -7,6 +7,7 @@ import {
   EnvironmentId,
   ProjectId,
   ThreadId,
+  type OrchestrationMessageContext,
   type ProviderInteractionMode,
   type RuntimeMode,
   type ThreadRelayInvokeInput,
@@ -73,6 +74,7 @@ const relayed = (
 interface Harness {
   readonly sends: Ref.Ref<number>;
   readonly sentTexts: Ref.Ref<ReadonlyArray<string>>;
+  readonly sentContexts: Ref.Ref<ReadonlyArray<OrchestrationMessageContext | undefined>>;
   readonly limits: Ref.Ref<ReadonlyArray<unknown>>;
   readonly searches: Ref.Ref<ReadonlyArray<unknown>>;
 }
@@ -88,6 +90,7 @@ const withExecution = <A, E>(
     const harness: Harness = {
       sends: yield* Ref.make(0),
       sentTexts: yield* Ref.make<ReadonlyArray<string>>([]),
+      sentContexts: yield* Ref.make<ReadonlyArray<OrchestrationMessageContext | undefined>>([]),
       limits: yield* Ref.make<ReadonlyArray<unknown>>([]),
       searches: yield* Ref.make<ReadonlyArray<unknown>>([]),
     };
@@ -105,6 +108,7 @@ const withExecution = <A, E>(
           Effect.gen(function* () {
             yield* Ref.update(harness.sends, (count) => count + 1);
             yield* Ref.update(harness.sentTexts, (texts) => [...texts, input.text]);
+            yield* Ref.update(harness.sentContexts, (contexts) => [...contexts, input.context]);
             yield* Ref.update(harness.limits, (limits) => [...limits, undefined]);
             const limit = yield* DispatchModeLimit;
             yield* Ref.update(harness.limits, (limits) => [
@@ -247,6 +251,19 @@ describe("ThreadRelayExecution", () => {
         );
         assert.deepEqual(yield* Ref.get(harness.sentTexts), [
           `[Relayed from thread "Caller" (thread:caller) on environment ${callerEnvironmentId}]\n\nplease review`,
+        ]);
+        // Clients show the relayed words under the origin, not the agent's provenance line.
+        assert.deepEqual(yield* Ref.get(harness.sentContexts), [
+          {
+            version: 1,
+            records: [],
+            relay: {
+              environmentId: callerEnvironmentId,
+              threadId: ThreadId.make("thread:caller"),
+              title: "Caller",
+              text: "please review",
+            },
+          },
         ]);
       }),
     ),

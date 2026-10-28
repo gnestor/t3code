@@ -91,7 +91,10 @@ import {
   useEnvironmentSettings,
 } from "../../hooks/useSettings";
 import { useConnectedEnvironmentIds } from "../../state/environments";
+import { connectionCatalogDisplayUrl } from "@t3tools/client-runtime/connection";
 import { environmentPresentations } from "../../state/presentation";
+import { isThreadRelayConnected } from "../../lib/threadRelayHost";
+import { settingsScopeEnvironmentLabel } from "../settings/settingsScopeAxis";
 import {
   approvalRedirectNotice,
   loadBalancingSendWarning,
@@ -153,6 +156,19 @@ const selectThreadRelayEnabled = (settings: ClientSettings) => settings.threadRe
 
 function readEnvironmentPresentation(environmentId: EnvironmentId) {
   return appAtomRegistry.get(environmentPresentations.presentationsAtom).get(environmentId);
+}
+
+/** Adds the address when another environment shares the name, as two servers on one machine do. */
+function readEnvironmentLabel(environmentId: EnvironmentId) {
+  const environments = [...appAtomRegistry.get(environmentPresentations.presentationsAtom)].map(
+    ([id, presentation]) => ({
+      environmentId: id,
+      label: presentation.entry.target.label,
+      displayUrl: connectionCatalogDisplayUrl(presentation.entry),
+    }),
+  );
+  const environment = environments.find((candidate) => candidate.environmentId === environmentId);
+  return environment && settingsScopeEnvironmentLabel(environment, environments);
 }
 
 function draftHasNonPromptContent(target: ComposerThreadTarget) {
@@ -568,26 +584,32 @@ export function useComposerSend(input: ComposerSendInput) {
           previewAnnotationContextReference(directAnnotation.annotation),
         ])
       : promptRef.current;
-    // An agent reaches another environment's thread only through a connected app with the relay on.
+    // An agent reaches another environment's thread only when both environments accepted this app's relay.
     const strandedThread = threadContextsOutsideEnvironment({
       text: promptForSend,
       records: composerThreadContexts,
       environmentId,
     }).find(
-      (record) => !threadRelayEnabled || !connectedEnvironmentIds.includes(record.environmentId),
+      (record) =>
+        !threadRelayEnabled ||
+        !connectedEnvironmentIds.includes(record.environmentId) ||
+        !isThreadRelayConnected(environmentId) ||
+        !isThreadRelayConnected(record.environmentId),
     );
     if (strandedThread) {
-      const owner =
-        readEnvironmentPresentation(strandedThread.environmentId)?.entry.target.label ??
-        "its machine";
+      const owner = readEnvironmentLabel(strandedThread.environmentId) ?? "its machine";
+      const here = readEnvironmentLabel(environmentId) ?? "this machine";
       const ownerConnected = connectedEnvironmentIds.includes(strandedThread.environmentId);
+      const withoutRelay = isThreadRelayConnected(environmentId) ? owner : here;
       toastManager.add(
         stackedThreadToast({
           type: "warning",
           title: "Attached thread is on another machine",
           description: !ownerConnected
-            ? `This machine's agent can't read "${strandedThread.title}" while ${owner} is disconnected. Reconnect it, remove the thread, or switch back to ${owner} to send.`
-            : `This machine's agent can't read "${strandedThread.title}". Turn on "Let agents on my environments reach each other through this app" in Settings, or switch back to ${owner} to send.`,
+            ? `The agent on ${here} can't read "${strandedThread.title}" while ${owner} is disconnected. Reconnect it, remove the thread, or switch back to ${owner} to send.`
+            : !threadRelayEnabled
+              ? `The agent on ${here} can't read "${strandedThread.title}". Turn on "Let agents on my environments reach each other through this app" in Settings, or switch back to ${owner} to send.`
+              : `The agent on ${here} can't read "${strandedThread.title}" because ${withoutRelay} runs a T3 Code version without the thread relay. Update it, or switch back to ${owner} to send.`,
           ...(ownerConnected && composerRef.current
             ? {
                 actionProps: {

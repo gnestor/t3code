@@ -1,4 +1,5 @@
 import * as ThreadRelayHost from "@t3tools/client-runtime/thread-relay/host";
+import type { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -24,7 +25,22 @@ const threadRelayEnabled = Stream.unwrap(
   ),
 );
 
+const relayConnectedEnvironmentIds = new Set<EnvironmentId>();
+
+/** Whether the environment accepted this app's relay connection; a server without the relay never does. */
+export const isThreadRelayConnected = (environmentId: EnvironmentId) =>
+  relayConnectedEnvironmentIds.has(environmentId);
+
 /** One host per page load: each open app is its own relay host. */
 export const layer = Layer.unwrap(
-  Effect.sync(() => ThreadRelayHost.layer({ clientId: randomUUID(), enabled: threadRelayEnabled })),
+  Effect.sync(() =>
+    ThreadRelayHost.layer({
+      clientId: randomUUID(),
+      enabled: threadRelayEnabled,
+      onConnectedChange: (environmentId, connected) => {
+        if (connected) relayConnectedEnvironmentIds.add(environmentId);
+        else relayConnectedEnvironmentIds.delete(environmentId);
+      },
+    }),
+  ),
 );

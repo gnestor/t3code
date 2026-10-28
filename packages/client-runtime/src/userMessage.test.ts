@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { GuestMessageId } from "@t3tools/contracts";
+import { EnvironmentId, GuestMessageId, ThreadId } from "@t3tools/contracts";
 
 import { resolveUserMessagePresentation } from "./userMessage.ts";
 
@@ -36,6 +36,24 @@ describe("resolveUserMessagePresentation", () => {
         },
       }),
     ).toEqual({ text: "Why?", attribution: "guest", scheduledTaskId: undefined, guestName: "Sam" });
+  });
+
+  it("shows a relayed message's own words under its origin, not the provenance line", () => {
+    const relay = {
+      environmentId: EnvironmentId.make("environment:laptop"),
+      threadId: ThreadId.make("thread:caller"),
+      title: "Caller",
+      text: "please review",
+    };
+    expect(
+      resolveUserMessagePresentation({
+        role: "user",
+        createdBy: "agent",
+        creationSource: "mcp",
+        text: `[Relayed from thread "Caller" (thread:caller) on environment environment:laptop]\n\nplease review`,
+        context: { relay },
+      }),
+    ).toEqual({ text: "please review", attribution: "agent", scheduledTaskId: undefined, relay });
   });
 
   it("attributes older server-sent restart continuations to T3 Code, not another agent", () => {

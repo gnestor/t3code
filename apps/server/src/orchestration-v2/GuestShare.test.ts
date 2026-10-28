@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import {
   CommandId,
+  EnvironmentId,
   GuestMessageId,
   GuestShareId,
   MessageId,
@@ -183,6 +184,41 @@ it.effect("drops guest attribution that a client sends on its own message", () =
       (message) => message.id === MessageId.make("owner-message"),
     );
     assert.isUndefined(sent?.context?.guest);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps relay attribution only on an agent's MCP send", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* setup;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const relay = {
+      environmentId: EnvironmentId.make("environment:laptop"),
+      threadId: ThreadId.make("thread:caller"),
+      title: "Caller",
+      text: "Hidden",
+    };
+    for (const [id, createdBy, creationSource] of [
+      ["client-relay", "user", "web"],
+      ["agent-relay", "agent", "mcp"],
+    ] as const) {
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(id),
+        threadId,
+        messageId: MessageId.make(id),
+        text: "Shown to the agent",
+        context: { version: 1, records: [], relay },
+        attachments: [],
+        dispatchMode: { type: "defer_start" },
+        createdBy,
+        creationSource,
+      });
+    }
+    const projection = yield* projections.getThreadProjection(threadId);
+    const relayOf = (id: string) =>
+      projection.messages.find((message) => message.id === MessageId.make(id))?.context?.relay;
+    assert.isUndefined(relayOf("client-relay"));
+    assert.deepEqual(relayOf("agent-relay"), relay);
   }).pipe(Effect.provide(layerTest)),
 );
 

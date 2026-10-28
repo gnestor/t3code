@@ -3,6 +3,7 @@ import {
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
   type OrchestrationV2IdleCompaction,
+  type RelayedMessageAttribution,
   ScheduledTaskId,
 } from "@t3tools/contracts";
 
@@ -28,13 +29,20 @@ export function resolveUserMessagePresentation(message: {
   readonly createdBy?: OrchestrationV2Actor;
   readonly creationSource?: OrchestrationV2CreationSource;
   readonly scheduledTaskId?: ScheduledTaskId;
-  readonly context?: { readonly guest?: GuestMessageAttribution | undefined } | undefined;
+  readonly context?:
+    | {
+        readonly guest?: GuestMessageAttribution | undefined;
+        readonly relay?: RelayedMessageAttribution | undefined;
+      }
+    | undefined;
 }): {
   readonly text: string;
   readonly attribution: "automation" | "agent" | "t3code" | "guest" | null;
   readonly scheduledTaskId: ScheduledTaskId | undefined;
   /** Set when `attribution` is "guest". */
   readonly guestName?: string;
+  /** Set when an agent on another environment sent the message through the thread relay. */
+  readonly relay?: RelayedMessageAttribution;
 } {
   if (message.role !== "user") {
     return { text: message.text, attribution: null, scheduledTaskId: undefined };
@@ -48,6 +56,11 @@ export function resolveUserMessagePresentation(message: {
       scheduledTaskId: undefined,
       guestName: guest.name,
     };
+  }
+  // The stored text leads with a provenance line for the agent; people see the relayed words.
+  const relay = message.context?.relay;
+  if (relay !== undefined) {
+    return { text: relay.text, attribution: "agent", scheduledTaskId: undefined, relay };
   }
   if (message.scheduledTaskId !== undefined) {
     return {

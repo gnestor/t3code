@@ -65,6 +65,7 @@ const makeFixture = Effect.fn("makeFixture")(function* (options: {
 }) {
   const connected = yield* SubscriptionRef.make(options.initialConnected);
   const calls = yield* Queue.unbounded<GatewayCall>();
+  const acceptedChanges = yield* Queue.unbounded<readonly [EnvironmentId, boolean]>();
   const streams = new Map<EnvironmentId, Queue.Queue<ThreadRelayStreamEvent>>();
   for (const environmentId of [envA, envB, envC]) {
     streams.set(environmentId, yield* Queue.unbounded<ThreadRelayStreamEvent>());
@@ -85,13 +86,16 @@ const makeFixture = Effect.fn("makeFixture")(function* (options: {
   return {
     connected,
     calls,
+    acceptedChanges,
     gateway: Layer.succeed(ThreadRelayHostModule.ThreadRelayGateway, gateway),
     send: (environmentId: EnvironmentId, event: ThreadRelayStreamEvent) =>
       Queue.offer(streams.get(environmentId)!, event),
     takeCalls: (count: number) => Queue.takeN(calls, count),
     /** The broker always announces the connection before it routes requests to it. */
     announce: (environmentId: EnvironmentId, connectionId: string) =>
-      Queue.offer(streams.get(environmentId)!, { type: "connected", connectionId }),
+      Queue.offer(streams.get(environmentId)!, { type: "connected", connectionId }).pipe(
+        Effect.andThen(Queue.take(acceptedChanges)),
+      ),
   };
 });
 
@@ -106,13 +110,18 @@ const makeRequest = (overrides: Partial<ThreadRelayRequest> = {}): ThreadRelayRe
 });
 
 const runHost = (
-  fixture: { readonly gateway: Layer.Layer<ThreadRelayHostModule.ThreadRelayGateway> },
+  fixture: {
+    readonly gateway: Layer.Layer<ThreadRelayHostModule.ThreadRelayGateway>;
+    readonly acceptedChanges: Queue.Queue<readonly [EnvironmentId, boolean]>;
+  },
   enabled: Stream.Stream<boolean>,
 ) =>
-  ThreadRelayHostModule.run({ clientId: "client-1", enabled }).pipe(
-    Effect.provide(fixture.gateway),
-    Effect.forkScoped,
-  );
+  ThreadRelayHostModule.run({
+    clientId: "client-1",
+    enabled,
+    onConnectedChange: (environmentId, connected) =>
+      Queue.offerUnsafe(fixture.acceptedChanges, [environmentId, connected]),
+  }).pipe(Effect.provide(fixture.gateway), Effect.forkScoped);
 
 const byEnvironment = <T extends { readonly environmentId: EnvironmentId }>(
   calls: ReadonlyArray<T>,
@@ -187,6 +196,29 @@ describe("thread relay host", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("tells the app which environments accepted the relay and when they leave it", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture({ initialConnected: [envA, envB] });
+      yield* runHost(fixture, Stream.make(true));
+      yield* fixture.takeCalls(2);
+
+      expect(yield* fixture.announce(envA, "connection-a")).toEqual([envA, true]);
+
+      yield* SubscriptionRef.set(fixture.connected, [envA]);
+      expect(
+        byEnvironment(
+          (yield* Queue.takeN(fixture.acceptedChanges, 2)).map(([environmentId, connected]) => ({
+            environmentId,
+            connected,
+          })),
+        ),
+      ).toEqual([
+        { environmentId: envA, connected: false },
+        { environmentId: envB, connected: false },
+      ]);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("invokes the target environment and responds with the result", () =>
     Effect.gen(function* () {
       const invoked = yield* Deferred.make<readonly [EnvironmentId, ThreadRelayInvokeInput]>();
@@ -202,6 +234,7 @@ describe("thread relay host", () => {
 
       const request = makeRequest();
       yield* fixture.announce(envA, "connection-a");
+      yield* fixture.announce(envB, "connection-b");
       yield* fixture.send(envA, { type: "request", connectionId: "connection-a", request });
 
       const [target, input] = yield* Deferred.await(invoked);
@@ -222,6 +255,25 @@ describe("thread relay host", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("refuses a target that never accepted the relay, like a server without it", () =>
+    Effect.gen(function* () {
+      const invoke = vi.fn(() => Effect.succeed(null));
+      const fixture = yield* makeFixture({ initialConnected: [envA, envB], invoke });
+      yield* runHost(fixture, Stream.make(true));
+      yield* fixture.takeCalls(2);
+      yield* fixture.announce(envA, "connection-a");
+      yield* fixture.send(envA, {
+        type: "request",
+        connectionId: "connection-a",
+        request: makeRequest(),
+      });
+
+      const [call] = yield* fixture.takeCalls(1);
+      expect(call?.type === "respond" ? call.response.error?._tag : undefined).toBe("unreachable");
+      expect(invoke).not.toHaveBeenCalled();
+    }).pipe(Effect.scoped),
+  );
+
   describe("untrusted requests", () => {
     const rejectedWith = Effect.fn("rejectedWith")(function* (input: {
       readonly request: Partial<ThreadRelayRequest>;
@@ -232,6 +284,7 @@ describe("thread relay host", () => {
       yield* runHost(fixture, Stream.make(true));
       yield* fixture.takeCalls(3);
       yield* fixture.announce(envA, "connection-a");
+      yield* fixture.announce(envB, "connection-b");
       yield* fixture.send(envA, {
         type: "request",
         connectionId: input.connectionId ?? "connection-a",
@@ -275,6 +328,7 @@ describe("thread relay host", () => {
         yield* runHost(fixture, Stream.make(true));
         yield* fixture.takeCalls(3);
         yield* fixture.announce(envA, "connection-a");
+        yield* fixture.announce(envB, "connection-b");
         yield* fixture.send(envA, {
           type: "request",
           connectionId: "connection-a",
@@ -297,6 +351,7 @@ describe("thread relay host", () => {
       yield* runHost(fixture, Stream.make(true));
       yield* fixture.takeCalls(2);
       yield* fixture.announce(envA, "connection-a");
+      yield* fixture.announce(envB, "connection-b");
       yield* fixture.send(envA, {
         type: "request",
         connectionId: "connection-a",
@@ -355,6 +410,7 @@ describe("thread relay host", () => {
         yield* runHost(fixture, Stream.make(true));
         yield* fixture.takeCalls(2);
         yield* fixture.announce(envA, "connection-a");
+        yield* fixture.announce(envB, "connection-b");
         yield* fixture.send(envA, {
           type: "request",
           connectionId: "connection-a",
@@ -378,6 +434,7 @@ describe("thread relay host", () => {
         yield* runHost(fixture, Stream.make(true));
         yield* fixture.takeCalls(2);
         yield* fixture.announce(envA, "connection-a");
+        yield* fixture.announce(envB, "connection-b");
         yield* fixture.send(envA, {
           type: "request",
           connectionId: "connection-a",

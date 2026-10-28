@@ -79,6 +79,7 @@ const hasStringProperty = <K extends string>(
 const THREAD_RELAY_ERROR_REASONS: ReadonlySet<string> = new Set<ThreadRelayErrorReason>([
   "timeout",
   "host_disconnected",
+  "unreachable",
   "forbidden",
   "not_found",
   "invalid_input",
@@ -124,17 +125,30 @@ const rejectionFor = (input: {
   readonly connectionId: string;
   readonly activeConnectionId: Option.Option<string>;
   readonly reachable: ReadonlyArray<EnvironmentId>;
+  readonly accepted: ReadonlySet<EnvironmentId>;
   readonly request: ThreadRelayRequest;
-}): string | undefined => {
+}): { readonly _tag: ThreadRelayErrorReason; readonly message: string } | undefined => {
   if (
     Option.isNone(input.activeConnectionId) ||
     input.activeConnectionId.value !== input.connectionId
   ) {
-    return "The request does not belong to this app's relay connection.";
+    return {
+      _tag: "forbidden",
+      message: "The request does not belong to this app's relay connection.",
+    };
   }
   const target = input.request.targetEnvironmentId;
   if (target === input.hostEnvironmentId || !input.reachable.includes(target)) {
-    return `Environment ${target} is not reachable through this app from ${input.hostEnvironmentId}.`;
+    return {
+      _tag: "forbidden",
+      message: `Environment ${target} is not reachable through this app from ${input.hostEnvironmentId}.`,
+    };
+  }
+  if (!input.accepted.has(target)) {
+    return {
+      _tag: "unreachable",
+      message: `Environment ${target} has not accepted this app's thread relay connection. It may run a T3 Code version without the thread relay.`,
+    };
   }
   return undefined;
 };
@@ -145,6 +159,7 @@ const handleRequest = Effect.fn("ThreadRelayHost.handleRequest")(function* (inpu
   readonly connectionId: string;
   readonly activeConnectionId: Option.Option<string>;
   readonly reachable: ReadonlyArray<EnvironmentId>;
+  readonly accepted: ReadonlySet<EnvironmentId>;
   readonly request: ThreadRelayRequest;
 }) {
   const gateway = yield* ThreadRelayGateway;
@@ -157,7 +172,7 @@ const handleRequest = Effect.fn("ThreadRelayHost.handleRequest")(function* (inpu
   const rejection = rejectionFor(input);
   const response: ThreadRelayResponse =
     rejection !== undefined
-      ? failureResponse(base, { _tag: "forbidden", message: rejection })
+      ? failureResponse(base, rejection)
       : yield* gateway
           .invoke(request.targetEnvironmentId, {
             operation: request.operation,
@@ -195,11 +210,28 @@ const handleRequest = Effect.fn("ThreadRelayHost.handleRequest")(function* (inpu
   );
 });
 
-const connectOnce = Effect.fn("ThreadRelayHost.connectOnce")(function* (input: {
+interface EnvironmentConnectionInput {
   readonly clientId: string;
   readonly environmentId: EnvironmentId;
   readonly reachable: SubscriptionRef.SubscriptionRef<ReadonlyArray<EnvironmentId>>;
-}) {
+  /** Environments whose relay connection is open, shared by every environment's worker. */
+  readonly accepted: Ref.Ref<ReadonlySet<EnvironmentId>>;
+  readonly onConnectedChange: ThreadRelayHostOptions["onConnectedChange"];
+}
+
+const setAccepted = (input: EnvironmentConnectionInput, connected: boolean) =>
+  Ref.update(input.accepted, (current) => {
+    const next = new Set(current);
+    if (connected) next.add(input.environmentId);
+    else next.delete(input.environmentId);
+    return next;
+  }).pipe(
+    Effect.andThen(Effect.sync(() => input.onConnectedChange?.(input.environmentId, connected))),
+  );
+
+const connectOnce = Effect.fn("ThreadRelayHost.connectOnce")(function* (
+  input: EnvironmentConnectionInput,
+) {
   const gateway = yield* ThreadRelayGateway;
   const initial = yield* SubscriptionRef.get(input.reachable);
   const connection = yield* Ref.make(
@@ -239,6 +271,7 @@ const connectOnce = Effect.fn("ThreadRelayHost.connectOnce")(function* (input: {
             connection,
             Option.some({ id: event.connectionId, reported: initial }),
           ).pipe(
+            Effect.andThen(setAccepted(input, true)),
             // Environments may have changed between reading `initial` and being connected.
             Effect.andThen(SubscriptionRef.get(input.reachable)),
             Effect.flatMap(report),
@@ -247,25 +280,25 @@ const connectOnce = Effect.fn("ThreadRelayHost.connectOnce")(function* (input: {
         return Effect.gen(function* () {
           const active = yield* Ref.get(connection);
           const reachable = yield* SubscriptionRef.get(input.reachable);
+          const accepted = yield* Ref.get(input.accepted);
           yield* handleRequest({
             clientId: input.clientId,
             hostEnvironmentId: input.environmentId,
             connectionId: event.connectionId,
             activeConnectionId: Option.map(active, (current) => current.id),
             reachable,
+            accepted,
             request: event.request,
           }).pipe(Effect.forkScoped);
         });
       }),
-      Effect.ensuring(Ref.set(connection, Option.none())),
+      Effect.ensuring(
+        Ref.set(connection, Option.none()).pipe(Effect.andThen(setAccepted(input, false))),
+      ),
     );
 });
 
-const runEnvironmentConnection = (input: {
-  readonly clientId: string;
-  readonly environmentId: EnvironmentId;
-  readonly reachable: SubscriptionRef.SubscriptionRef<ReadonlyArray<EnvironmentId>>;
-}) =>
+const runEnvironmentConnection = (input: EnvironmentConnectionInput) =>
   Effect.scoped(connectOnce(input)).pipe(
     Effect.catch((error) =>
       Effect.logWarning("Thread relay connection ended.", {
@@ -287,11 +320,12 @@ const runEnvironmentConnection = (input: {
  * A host only matters when the app reaches at least two environments, so a connection is
  * opened for each environment only then, and reports the others as reachable through it.
  */
-const manageConnections = (clientId: string) =>
+const manageConnections = (options: ThreadRelayHostOptions) =>
   Effect.scoped(
     Effect.gen(function* () {
       const gateway = yield* ThreadRelayGateway;
       const scope = yield* Scope.Scope;
+      const accepted = yield* Ref.make<ReadonlySet<EnvironmentId>>(new Set());
       const workers = new Map<
         EnvironmentId,
         {
@@ -322,9 +356,11 @@ const manageConnections = (clientId: string) =>
               }
               const reachable = yield* SubscriptionRef.make<ReadonlyArray<EnvironmentId>>(others);
               const fiber = yield* runEnvironmentConnection({
-                clientId,
+                clientId: options.clientId,
                 environmentId,
                 reachable,
+                accepted,
+                onConnectedChange: options.onConnectedChange,
               }).pipe(Effect.forkIn(scope));
               workers.set(environmentId, { reachable, fiber });
             }
@@ -338,6 +374,8 @@ export interface ThreadRelayHostOptions {
   readonly clientId: string;
   /** Emits the current value of the "reach each other through this app" setting. */
   readonly enabled: Stream.Stream<boolean>;
+  /** Called when an environment accepts or loses this app's relay connection. */
+  readonly onConnectedChange?: (environmentId: EnvironmentId, connected: boolean) => void;
 }
 
 /** Runs until interrupted. Nothing is opened while the setting is off. */
@@ -345,7 +383,7 @@ export const run = (options: ThreadRelayHostOptions) =>
   options.enabled.pipe(
     Stream.changes,
     Stream.switchMap((enabled) =>
-      enabled ? Stream.fromEffect(manageConnections(options.clientId)) : Stream.empty,
+      enabled ? Stream.fromEffect(manageConnections(options)) : Stream.empty,
     ),
     Stream.runDrain,
   );

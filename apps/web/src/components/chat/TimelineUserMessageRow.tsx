@@ -4,7 +4,10 @@ import { findRevealRef } from "./markdownFindContext";
 import { type MessageId, type ServerProviderSkill, ThreadId } from "@t3tools/contracts";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { buildThreadRouteParams } from "../../threadRoutes";
 import { useQuietThreadShell } from "../../state/entities";
+import { useEnvironmentPresentation } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
@@ -311,8 +314,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ? { environmentId: ctx.activeThreadEnvironmentId, threadId: senderThreadId }
       : null,
   );
+  const relay = userMessage.relay;
+  const relayEnvironment = useEnvironmentPresentation(relay?.environmentId ?? null).presentation;
   const resolvedContext = resolveUserMessageContext(
-    userMessage.attribution === "guest" ? { ...row.message, text: userMessage.text } : row.message,
+    userMessage.attribution === "guest" || relay !== undefined
+      ? { ...row.message, text: userMessage.text }
+      : row.message,
   );
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const revertTurnCount = row.revertTurnCount;
@@ -460,7 +467,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         {folded ? (
           <FoldedMessageHeader
             icon={MessagesSquareIcon}
-            label={senderShell?.title.trim() || "Agent"}
+            label={
+              relay === undefined
+                ? senderShell?.title.trim() || "Agent"
+                : `${relay.title || "Agent"} · ${relayEnvironment?.entry.target.label ?? "another environment"}`
+            }
             summary={foldSummary}
             expanded={expanded}
             onToggle={() => setExpanded((value) => !value)}
@@ -626,6 +637,20 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           <div className="flex shrink-0 items-center gap-2">
             {folded && senderThreadId ? (
               <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
+                Open thread
+              </InlineButton>
+            ) : relay !== undefined && relayEnvironment !== null ? (
+              <InlineButton
+                tone="muted"
+                render={
+                  <Link
+                    to="/$environmentId/$threadId"
+                    params={buildThreadRouteParams(
+                      scopeThreadRef(relay.environmentId, relay.threadId),
+                    )}
+                  />
+                }
+              >
                 Open thread
               </InlineButton>
             ) : null}

@@ -454,7 +454,7 @@ it.effect("surfaces an unreachable environment as an MCP failure naming it", () 
     ).pipe(Effect.flip);
 
     expect(error).toBeInstanceOf(OrchestratorMcpFailure);
-    expect(error).toMatchObject({ code: "orchestration_error" });
+    expect(error).toMatchObject({ code: "environment_unreachable" });
     expect(error.message).toContain(remoteEnvironment);
     expect(error.message).toContain("Open T3 Code");
   }),
@@ -477,5 +477,9 @@ it.effect("maps relay error reasons to MCP failure codes", () =>
     expect(yield* failWith("forbidden")).toMatchObject({ code: "capability_denied" });
     expect(yield* failWith("invalid_input")).toMatchObject({ code: "invalid_request" });
     expect(yield* failWith("timeout")).toMatchObject({ code: "orchestration_error" });
+    expect(yield* failWith("unreachable")).toMatchObject({ code: "environment_unreachable" });
+    expect(yield* failWith("host_disconnected")).toMatchObject({
+      code: "environment_unreachable",
+    });
   }),
 );

@@ -23,6 +23,7 @@ import {
   type ChatAttachment,
   CommandId,
   type GuestMessageId,
+  type OrchestrationMessageContext,
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
   MessageId,
@@ -585,6 +586,15 @@ function withoutPreparationResult(
 ) {
   const { output: _output, exitCode: _exitCode, outputIndicatesFailure: _failure, ...rest } = item;
   return rest;
+}
+
+/** Relay attribution must describe the text it rides with, so only an agent's MCP send keeps it, and an edit drops it. */
+function withoutRelayAttribution<
+  C extends { readonly context?: OrchestrationMessageContext | undefined },
+>(command: C): C {
+  if (command.context?.relay === undefined) return command;
+  const { relay: _relay, ...context } = command.context;
+  return { ...command, context };
 }
 
 /** Stop ended this task, so its result is not delivered to the parent agent. */
@@ -8596,7 +8606,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       providerInstanceId: queuedRun.providerInstanceId,
       occurredAt: now,
       payload: withoutGuestAttribution({
-        ...queuedMessage,
+        ...withoutRelayAttribution(queuedMessage),
         text: command.text,
         ...editedAttachments,
         ...(command.context ? { context: command.context } : {}),
@@ -8612,7 +8622,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         providerInstanceId: queuedRun.providerInstanceId,
         occurredAt: now,
         payload: withoutGuestAttribution({
-          ...queuedTurnItem,
+          ...withoutRelayAttribution(queuedTurnItem),
           text: command.text,
           ...editedAttachments,
           ...(command.context ? { context: command.context } : {}),
@@ -11703,7 +11713,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : yield* emitGuestMessageSent(command, command.guestMessageId, thread, events);
         const dispatched =
           guestSend === undefined
-            ? withoutGuestAttribution(command)
+            ? withoutGuestAttribution(
+                command.createdBy === "agent" && command.creationSource === "mcp"
+                  ? command
+                  : withoutRelayAttribution(command),
+              )
             : {
                 ...command,
                 text: guestSend.text,

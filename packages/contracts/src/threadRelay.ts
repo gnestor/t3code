@@ -87,6 +87,8 @@ export class ThreadRelayEnvironmentUnreachableError extends Schema.TaggedError<T
 export const ThreadRelayErrorReason = Schema.Literals([
   "timeout",
   "host_disconnected",
+  /** The target environment never accepted the app's relay connection. */
+  "unreachable",
   "forbidden",
   "not_found",
   "invalid_input",

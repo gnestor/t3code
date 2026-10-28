@@ -730,6 +730,7 @@ export class OrchestratorMcpFailure extends Schema.TaggedError<OrchestratorMcpFa
       "thread_not_interruptible",
       "invalid_request",
       "orchestration_error",
+      "environment_unreachable",
       "thread_credential_required",
       "target_required",
     ]),
