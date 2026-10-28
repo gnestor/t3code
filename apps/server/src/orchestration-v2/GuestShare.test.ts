@@ -222,6 +222,53 @@ it.effect("keeps relay attribution only on an agent's MCP send", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("drops relay attribution when a queued message is edited, even one the edit claims", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* setup;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const relay = {
+      environmentId: EnvironmentId.make("environment:laptop"),
+      threadId: ThreadId.make("thread:caller"),
+      title: "Caller",
+      text: "Hidden",
+    };
+    for (const [id, dispatchMode] of [
+      ["first", { type: "defer_start" }],
+      ["relayed", { type: "queue_after_active" }],
+    ] as const) {
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(id),
+        threadId,
+        messageId: MessageId.make(id),
+        text: "Shown to the agent",
+        context: { version: 1, records: [], relay },
+        attachments: [],
+        dispatchMode,
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+    }
+    const queued = (yield* projections.getThreadProjection(threadId)).runs.find(
+      (run) => run.status === "queued",
+    );
+    assert.isDefined(queued);
+    yield* orchestrator.dispatch({
+      type: "queued-run.edit",
+      commandId: CommandId.make("edit"),
+      threadId,
+      runId: queued.id,
+      text: "Edited",
+      context: { version: 1, records: [], relay },
+    });
+    const message = (yield* projections.getThreadProjection(threadId)).messages.find(
+      (candidate) => candidate.id === MessageId.make("relayed"),
+    );
+    assert.equal(message?.text, "Edited");
+    assert.isUndefined(message?.context?.relay);
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("keeps a queued guest message unchanged when the owner tries to edit it", () =>
   Effect.gen(function* () {
     const orchestrator = yield* setup;

@@ -8605,13 +8605,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(queuedRun.rootNodeId === null ? {} : { nodeId: queuedRun.rootNodeId }),
       providerInstanceId: queuedRun.providerInstanceId,
       occurredAt: now,
-      payload: withoutGuestAttribution({
-        ...withoutRelayAttribution(queuedMessage),
-        text: command.text,
-        ...editedAttachments,
-        ...(command.context ? { context: command.context } : {}),
-        updatedAt: now,
-      }),
+      payload: withoutGuestAttribution(
+        withoutRelayAttribution({
+          ...queuedMessage,
+          text: command.text,
+          ...editedAttachments,
+          ...(command.context ? { context: command.context } : {}),
+          updatedAt: now,
+        }),
+      ),
     });
     if (queuedTurnItem !== undefined && queuedTurnItem.type === "user_message") {
       yield* emitEvent({
@@ -8621,13 +8623,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(queuedRun.rootNodeId === null ? {} : { nodeId: queuedRun.rootNodeId }),
         providerInstanceId: queuedRun.providerInstanceId,
         occurredAt: now,
-        payload: withoutGuestAttribution({
-          ...withoutRelayAttribution(queuedTurnItem),
-          text: command.text,
-          ...editedAttachments,
-          ...(command.context ? { context: command.context } : {}),
-          updatedAt: now,
-        }),
+        payload: withoutGuestAttribution(
+          withoutRelayAttribution({
+            ...queuedTurnItem,
+            text: command.text,
+            ...editedAttachments,
+            ...(command.context ? { context: command.context } : {}),
+            updatedAt: now,
+          }),
+        ),
       });
     }
   });
